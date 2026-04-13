@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrueValue Dynasty</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface-2: #1a2234;
+    --border: #1e2a3a;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.15);
+    --green: #10b981;
+    --green-bg: rgba(16, 185, 129, 0.1);
+    --red: #ef4444;
+    --red-bg: rgba(239, 68, 68, 0.1);
+    --qb: #ef4444;
+    --rb: #3b82f6;
+    --wr: #10b981;
+    --te: #f59e0b;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .header {
+    padding: 1.25rem 1.5rem 0;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .header h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .header h1 span {
+    color: var(--accent);
+  }
+
+  .header p {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+  }
+
+  .controls {
+    max-width: 1400px;
+    margin: 0.75rem auto;
+    padding: 0 1.5rem;
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .search-box {
+    flex: 1;
+    min-width: 240px;
+    position: relative;
+  }
+
+  .search-box svg {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    width: 16px;
+    height: 16px;
+  }
+
+  .search-box input {
+    width: 100%;
+    padding: 0.5rem 1rem 0.5rem 2.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .search-box input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  .search-box input::placeholder { color: var(--text-muted); }
+
+  .pos-filters {
+    display: flex;
+    gap: 0.375rem;
+  }
+
+  .pos-btn {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.02em;
+  }
+
+  .pos-btn:hover { border-color: var(--text-muted); color: var(--text); }
+  .pos-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+  .pos-btn.active[data-pos="QB"] { border-color: var(--qb); color: var(--qb); background: rgba(239,68,68,0.1); }
+  .pos-btn.active[data-pos="RB"] { border-color: var(--rb); color: var(--rb); background: rgba(59,130,246,0.1); }
+  .pos-btn.active[data-pos="WR"] { border-color: var(--wr); color: var(--wr); background: rgba(16,185,129,0.1); }
+  .pos-btn.active[data-pos="TE"] { border-color: var(--te); color: var(--te); background: rgba(245,158,11,0.1); }
+
+  .table-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 1.5rem 3rem;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  thead th {
+    padding: 0.6rem 0.6rem;
+    text-align: left;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    transition: color 0.2s;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+
+  thead th:hover { color: var(--text); }
+
+  thead th.sorted { color: var(--accent); }
+
+  thead th .sort-arrow {
+    display: inline-block;
+    margin-left: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  thead th.sorted .sort-arrow { opacity: 1; }
+
+  tbody tr {
+    transition: background 0.15s;
+  }
+
+  tbody tr:hover { background: var(--surface-2); }
+
+  tbody td {
+    padding: 0.55rem 0.6rem;
+    font-size: 0.8rem;
+    border-bottom: 1px solid rgba(30, 42, 58, 0.5);
+    white-space: nowrap;
+  }
+
+  .rank-cell {
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    width: 36px;
+  }
+
+  .player-name {
+    font-weight: 600;
+    min-width: 150px;
+  }
+
+  .pos-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    min-width: 32px;
+    text-align: center;
+  }
+
+  .pos-QB { background: rgba(239,68,68,0.15); color: var(--qb); }
+  .pos-RB { background: rgba(59,130,246,0.15); color: var(--rb); }
+  .pos-WR { background: rgba(16,185,129,0.15); color: var(--wr); }
+  .pos-TE { background: rgba(245,158,11,0.15); color: var(--te); }
+
+  .value-cell {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ktc-cell {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-positive {
+    color: var(--green);
+    background: var(--green-bg);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.8rem;
+  }
+
+  .diff-negative {
+    color: var(--red);
+    background: var(--red-bg);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.8rem;
+  }
+
+  .diff-neutral {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .stat-cards {
+    max-width: 1400px;
+    margin: 0.75rem auto;
+    padding: 0 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.6rem;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+  }
+
+  .stat-card .label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .stat-card .val {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin-top: 0.15rem;
+  }
+
+  .stat-card .sub {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 0.1rem;
+  }
+
+  .count-badge {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 0.375rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .missed-badge {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>TrueValue</span> Dynasty</h1>
+  <p>ML-derived dynasty fantasy football valuations &mdash; 3-model approach: PPG prediction, survival probability, age curves</p>
+</div>
+
+<div class="stat-cards" id="statCards"></div>
+
+<div class="controls">
+  <div class="search-box">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="text" id="search" placeholder="Search players...">
+  </div>
+  <div class="pos-filters">
+    <button class="pos-btn active" data-pos="ALL">ALL</button>
+    <button class="pos-btn" data-pos="QB">QB</button>
+    <button class="pos-btn" data-pos="RB">RB</button>
+    <button class="pos-btn" data-pos="WR">WR</button>
+    <button class="pos-btn" data-pos="TE">TE</button>
+  </div>
+  <div class="count-badge" id="countBadge">0 players</div>
+</div>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th data-key="rank" data-dir="asc" class="sorted">Rk <span class="sort-arrow">&#9650;</span></th>
+        <th>Player</th>
+        <th>Pos</th>
+        <th data-key="age" class="num">Age <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="ppg" class="num">Cur PPG <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="predPpg" class="num">Pred PPG <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="value" class="num">True Value <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="ktc" class="num">KTC <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="diff" class="num">Diff <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="diffPct" class="num">Diff % <span class="sort-arrow">&#9650;</span></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+let players = [];
+let sortKey = 'value';
+let sortDir = -1; // -1 = descending
+let filterPos = 'ALL';
+let searchQuery = '';
+
+async function loadData() {
+  const res = await fetch('data.json');
+  players = await res.json();
+  updateStats();
+  render();
+}
+
+function updateStats() {
+  const visible = getFiltered();
+  const withKtc = visible.filter(p => p.ktc !== null && p.value > 0);
+  const undervalued = withKtc.filter(p => p.diff > 0);
+  const overvalued = withKtc.filter(p => p.diff < 0);
+  const topValue = visible.length > 0 ? visible.reduce((a,b) => a.value > b.value ? a : b) : null;
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="stat-card">
+      <div class="label">Players Ranked</div>
+      <div class="val">${visible.length}</div>
+      <div class="sub">${visible.filter(p=>p.value>0).length} with True Value &gt; 0</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Undervalued by KTC</div>
+      <div class="val" style="color:var(--green)">${undervalued.length}</div>
+      <div class="sub">True Value &gt; Market Price</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Overvalued by KTC</div>
+      <div class="val" style="color:var(--red)">${overvalued.length}</div>
+      <div class="sub">Market Price &gt; True Value</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">#1 True Value</div>
+      <div class="val">${topValue ? topValue.name : '—'}</div>
+      <div class="sub">${topValue ? topValue.value.toLocaleString() + ' pts' : ''}</div>
+    </div>
+  `;
+}
+
+function getFiltered() {
+  return players
+    .filter(p => filterPos === 'ALL' || p.pos === filterPos)
+    .filter(p => {
+      if (!searchQuery) return true;
+      return p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    })
+    .sort((a, b) => {
+      let va = a[sortKey], vb = b[sortKey];
+      if (va === null || va === undefined) va = sortDir === 1 ? Infinity : -Infinity;
+      if (vb === null || vb === undefined) vb = sortDir === 1 ? Infinity : -Infinity;
+      return (va - vb) * sortDir;
+    });
+}
+
+function render() {
+  const filtered = getFiltered();
+  document.getElementById('countBadge').textContent = `${filtered.length} players`;
+
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = filtered.map((p, i) => {
+    const diffHtml = p.diff !== null
+      ? `<span class="${p.diff > 0 ? 'diff-positive' : p.diff < 0 ? 'diff-negative' : 'diff-neutral'}">${p.diff > 0 ? '+' : ''}${p.diff.toLocaleString()}</span>`
+      : '<span class="diff-neutral">—</span>';
+    const diffPctHtml = p.diffPct !== null
+      ? `<span class="${p.diffPct > 0 ? 'diff-positive' : p.diffPct < 0 ? 'diff-negative' : 'diff-neutral'}">${p.diffPct > 0 ? '+' : ''}${p.diffPct}%</span>`
+      : '<span class="diff-neutral">—</span>';
+    const missedHtml = p.missed > 0 ? ` <span class="missed-badge">${p.missed}yr</span>` : '';
+
+    return `<tr>
+      <td class="rank-cell">${i + 1}</td>
+      <td class="player-name">${p.name}${missedHtml}</td>
+      <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
+      <td class="num">${p.age}</td>
+      <td class="num">${p.ppg}</td>
+      <td class="num">${p.predPpg}</td>
+      <td class="num value-cell">${p.value.toLocaleString()}</td>
+      <td class="num ktc-cell">${p.ktc !== null ? p.ktc.toLocaleString() : '—'}</td>
+      <td class="num">${diffHtml}</td>
+      <td class="num">${diffPctHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Search
+document.getElementById('search').addEventListener('input', e => {
+  searchQuery = e.target.value;
+  updateStats();
+  render();
+});
+
+// Position filters
+document.querySelectorAll('.pos-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filterPos = btn.dataset.pos;
+    updateStats();
+    render();
+  });
+});
+
+// Column sorting
+document.querySelectorAll('thead th[data-key]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if (sortKey === key) {
+      sortDir *= -1;
+    } else {
+      sortKey = key;
+      sortDir = -1; // default descending for new column
+    }
+    // Update sort arrows
+    document.querySelectorAll('thead th').forEach(t => {
+      t.classList.remove('sorted');
+      t.querySelector('.sort-arrow') && (t.querySelector('.sort-arrow').innerHTML = '&#9650;');
+    });
+    th.classList.add('sorted');
+    th.querySelector('.sort-arrow').innerHTML = sortDir === 1 ? '&#9650;' : '&#9660;';
+    render();
+  });
+});
+
+loadData();
+</script>
+</body>
+</html>

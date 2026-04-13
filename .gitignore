@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+data/*.csv
+data/*.parquet
+data/*.html
+models/*.json
+frontend/data.json
+.DS_Store
