@@ -153,6 +153,10 @@ def calculate_dynasty_values(league=None):
                 season_ppg = projected_ppg
             else:
                 retention = get_retention_factor(pos, future_age - 1, age_curves)
+                # Cap retention at 1.0: the PPG predictor already accounts for
+                # expected improvement; applying growth curves on top double-counts.
+                # Age curves should only model decline, not speculative growth.
+                retention = min(retention, 1.0)
                 projected_ppg = projected_ppg * retention
                 season_ppg = max(0, projected_ppg)
 
@@ -193,26 +197,25 @@ def calculate_dynasty_values(league=None):
 
     results_df = pd.DataFrame(results)
 
-    # Normalize to 0-9999 scale using a log-scaled approach
-    # This spreads the distribution more naturally instead of letting
-    # one outlier compress everyone else to the bottom
-    raw = results_df["dynasty_value_raw"].copy()
-    raw_positive = raw[raw > 0]
+    # Normalize per-position to 0-9999, then combine.
+    # QBs naturally accumulate more raw PAR (wider PPG range, slower aging),
+    # so a single global normalization lets QBs crowd out the top.
+    # Per-position normalization ensures each position's #1 player is ~9999
+    # and the distributions are comparable across positions.
+    results_df["dynasty_value"] = 0
+    for pos in ["QB", "RB", "WR", "TE"]:
+        mask = results_df["position"] == pos
+        raw = results_df.loc[mask, "dynasty_value_raw"].copy()
+        raw_positive = raw[raw > 0]
 
-    if len(raw_positive) > 0:
-        # Log transform to compress the top and spread the middle
-        log_raw = np.log1p(raw)  # log(1 + x) to handle zeros
-        log_max = log_raw.max()
-        if log_max > 0:
-            results_df["dynasty_value"] = (
-                (log_raw / log_max) * 9999
-            ).round(0).astype(int)
-        else:
-            results_df["dynasty_value"] = 0
-        # Ensure 0 raw stays 0
-        results_df.loc[raw <= 0, "dynasty_value"] = 0
-    else:
-        results_df["dynasty_value"] = 0
+        if len(raw_positive) > 0:
+            log_raw = np.log1p(raw)
+            log_max = log_raw.max()
+            if log_max > 0:
+                results_df.loc[mask, "dynasty_value"] = (
+                    (log_raw / log_max) * 9999
+                ).round(0).astype(int)
+        results_df.loc[mask & (raw <= 0), "dynasty_value"] = 0
 
     # Map player names
     players = pd.read_csv(os.path.join(DATA_DIR, "players.csv"))

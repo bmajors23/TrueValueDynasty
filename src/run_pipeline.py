@@ -21,7 +21,7 @@ def main():
     print("TRUEVALUE DYNASTY - Full Pipeline (3-Model Approach)")
     print("=" * 95)
 
-    print("\n[1/7] Collecting NFL data...")
+    print("\n[1/7] Collecting NFL data (2010-2025 via nflverse + nfl_data_py)...")
     collect_all()
 
     print("\n[2/7] Collecting KTC values (for comparison only)...")

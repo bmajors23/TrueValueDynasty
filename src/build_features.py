@@ -13,7 +13,7 @@ import os
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 DYNASTY_POSITIONS = ["QB", "RB", "WR", "TE"]
-CURRENT_SEASON = 2024
+CURRENT_SEASON = 2025
 
 
 def load_raw_data():
@@ -52,11 +52,15 @@ def build_season_features(seasonal, players, draft, snaps):
     reg["total_epa"] = reg["rushing_epa"].fillna(0) + reg["receiving_epa"].fillna(0) + reg["passing_epa"].fillna(0)
     reg["epa_per_game"] = reg["total_epa"] / g
 
-    # Player info join
+    # Filter to dynasty positions (nflverse data includes position column)
+    if "position" in reg.columns:
+        reg = reg[reg["position"].isin(DYNASTY_POSITIONS)].copy()
+
+    # Player info join (for birth_date, rookie_season — position already in stats)
     player_info = players[players["position"].isin(DYNASTY_POSITIONS)].copy()
     player_info["birth_date"] = pd.to_datetime(player_info["birth_date"], errors="coerce")
     player_info["rookie_season"] = pd.to_numeric(player_info["rookie_season"], errors="coerce")
-    player_info = player_info[["gsis_id", "position", "birth_date", "rookie_season", "height", "weight"]].copy()
+    player_info = player_info[["gsis_id", "birth_date", "rookie_season", "height", "weight"]].copy()
     player_info = player_info.rename(columns={"gsis_id": "player_id"})
 
     reg = reg.merge(player_info, on="player_id", how="inner")
@@ -114,7 +118,13 @@ def build_season_features(seasonal, players, draft, snaps):
     ]
 
     id_cols = ["player_id", "season", "position"]
-    output = reg[id_cols + feature_cols].copy()
+    # Only include feature columns that exist (Sleeper 2025 data won't have
+    # EPA or advanced analytics — XGBoost handles NaN natively)
+    available_features = [c for c in feature_cols if c in reg.columns]
+    missing_features = [c for c in feature_cols if c not in reg.columns]
+    output = reg[id_cols + available_features].copy()
+    for col in missing_features:
+        output[col] = np.nan
     output["ppg_target_col"] = reg["ppg"]
 
     return output

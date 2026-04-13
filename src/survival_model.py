@@ -41,13 +41,17 @@ def build_survival_training_data():
     reg = seasonal[seasonal["season_type"] == "REG"].copy()
     reg["ppg"] = reg["fantasy_points_ppr"] / reg["games"].clip(lower=1)
 
-    # Join player info
+    # Filter to dynasty positions (nflverse data includes position column)
+    if "position" in reg.columns:
+        reg = reg[reg["position"].isin(["QB", "RB", "WR", "TE"])].copy()
+
+    # Join player info (position already in stats — only need birth_date, rookie_season, draft)
     player_info = players[players["position"].isin(["QB", "RB", "WR", "TE"])].copy()
     player_info["birth_date"] = pd.to_datetime(player_info["birth_date"], errors="coerce")
     player_info["rookie_season"] = pd.to_numeric(player_info["rookie_season"], errors="coerce")
 
     reg = reg.merge(
-        player_info[["gsis_id", "position", "birth_date", "rookie_season",
+        player_info[["gsis_id", "birth_date", "rookie_season",
                       "draft_round", "draft_pick"]].rename(columns={"gsis_id": "player_id"}),
         on="player_id", how="inner",
     )
