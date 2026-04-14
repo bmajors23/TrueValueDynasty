@@ -52,6 +52,38 @@ def build_season_features(seasonal, players, draft, snaps):
     reg["total_epa"] = reg["rushing_epa"].fillna(0) + reg["receiving_epa"].fillna(0) + reg["passing_epa"].fillna(0)
     reg["epa_per_game"] = reg["total_epa"] / g
 
+    # === Volume / Opportunity features ===
+    # Total touches per game (carries + receptions) — measures opportunity
+    reg["touches_per_game"] = (reg["carries"].fillna(0) + reg["receptions"].fillna(0)) / g
+    # Total opportunities per game (carries + targets) — measures involvement
+    reg["opportunities_per_game"] = (reg["carries"].fillna(0) + reg["targets"].fillna(0)) / g
+    # Raw volume totals (XGBoost can learn that 350 carries means a workhorse)
+    reg["total_touches"] = reg["carries"].fillna(0) + reg["receptions"].fillna(0)
+    reg["total_opportunities"] = reg["carries"].fillna(0) + reg["targets"].fillna(0)
+
+    # === First down / efficiency features ===
+    reg["first_downs_per_game"] = (
+        reg["rushing_first_downs"].fillna(0) +
+        reg["receiving_first_downs"].fillna(0) +
+        reg["passing_first_downs"].fillna(0)
+    ) / g
+    reg["receiving_air_yards_per_game"] = reg["receiving_air_yards"].fillna(0) / g
+    reg["racr"] = reg.get("racr", pd.Series(dtype=float))
+
+    # === Team offensive context ===
+    # Derive team offensive quality from total team fantasy points per game
+    # This lets the model know if a player is on a high-powered offense
+    team_season_fpts = reg.groupby(["season", "recent_team"])["fantasy_points_ppr"].sum().reset_index()
+    team_season_fpts.columns = ["season", "recent_team", "team_total_fpts"]
+    # Normalize per-season to a 0-1 scale (relative to other teams that year)
+    team_season_fpts["team_offense_rank_pct"] = team_season_fpts.groupby("season")["team_total_fpts"].rank(pct=True)
+    reg = reg.merge(team_season_fpts[["season", "recent_team", "team_total_fpts", "team_offense_rank_pct"]],
+                     on=["season", "recent_team"], how="left")
+    reg["team_fpts_per_game"] = reg["team_total_fpts"] / 17  # approx games per team
+
+    # Player's share of team production — measures how central they are
+    reg["team_production_share"] = reg["fantasy_points_ppr"] / reg["team_total_fpts"].clip(lower=1)
+
     # Filter to dynasty positions (nflverse data includes position column)
     if "position" in reg.columns:
         reg = reg[reg["position"].isin(DYNASTY_POSITIONS)].copy()
@@ -115,6 +147,13 @@ def build_season_features(seasonal, players, draft, snaps):
         "draft_capital_decayed", "draft_round", "draft_pick",
         "total_off_snaps", "avg_snap_pct",
         "relevant",
+        # Volume / opportunity
+        "touches_per_game", "opportunities_per_game",
+        "total_touches", "total_opportunities",
+        # First downs / air yards
+        "first_downs_per_game", "receiving_air_yards_per_game", "racr",
+        # Team context
+        "team_offense_rank_pct", "team_fpts_per_game", "team_production_share",
     ]
 
     id_cols = ["player_id", "season", "position"]
@@ -161,6 +200,54 @@ def build_training_pairs(season_features):
     training_df = training_df.merge(prev, on=["player_id", "season"], how="left")
 
     # YoY deltas
+    training_df["ppg_delta"] = training_df["ppg"] - training_df["prev_ppg"].fillna(0)
+    training_df["ypg_delta"] = training_df["yards_per_game"] - training_df["prev_yards_per_game"].fillna(0)
+    training_df["epg_delta"] = training_df["epa_per_game"] - training_df["prev_epa_per_game"].fillna(0)
+
+    return training_df
+
+
+def build_multiyear_training_pairs(season_features, horizon=2):
+    """
+    Create training pairs: features from season N, target = PPG from season N+horizon.
+
+    Only includes players who actually played in the target season (inner join).
+    This makes the model predict E[PPG | still playing in year N], NOT the
+    unconditional expectation. Attrition is handled separately by the survival model.
+    """
+    seasons = sorted(season_features["season"].unique())
+    pairs = []
+
+    for i in range(len(seasons) - horizon):
+        curr_season = seasons[i]
+        target_season = seasons[i + horizon]
+
+        curr = season_features[season_features["season"] == curr_season].copy()
+        target = season_features[season_features["season"] == target_season][
+            ["player_id", "ppg_target_col", "games"]
+        ].rename(columns={"ppg_target_col": f"target_ppg_{horizon}yr",
+                          "games": f"target_games_{horizon}yr"})
+
+        # Inner join: only players who actually played in the target season.
+        # Survival/attrition is modeled separately.
+        merged = curr.merge(target, on="player_id", how="inner")
+
+        # Filter: must have played meaningful snaps in both seasons
+        merged = merged[
+            (merged["games"] >= 4) &
+            (merged[f"target_games_{horizon}yr"] >= 4)
+        ].copy()
+        pairs.append(merged)
+
+    training_df = pd.concat(pairs, ignore_index=True)
+
+    # Previous season stats for trajectory features
+    prev = season_features[["player_id", "season", "ppg", "fantasy_points_ppr", "games",
+                             "yards_per_game", "td_per_game", "epa_per_game"]].copy()
+    prev["season"] = prev["season"] + 1
+    prev.columns = ["player_id", "season"] + [f"prev_{c}" for c in prev.columns[2:]]
+    training_df = training_df.merge(prev, on=["player_id", "season"], how="left")
+
     training_df["ppg_delta"] = training_df["ppg"] - training_df["prev_ppg"].fillna(0)
     training_df["ypg_delta"] = training_df["yards_per_game"] - training_df["prev_yards_per_game"].fillna(0)
     training_df["epg_delta"] = training_df["epa_per_game"] - training_df["prev_epa_per_game"].fillna(0)
@@ -232,6 +319,12 @@ def main():
     print("Building training pairs (season N -> season N+1 PPG)...")
     training_df = build_training_pairs(season_features)
     print(f"  {len(training_df)} training samples")
+
+    print("Building multi-year training pairs...")
+    for horizon in [2, 3]:
+        df = build_multiyear_training_pairs(season_features, horizon=horizon)
+        df.to_csv(os.path.join(DATA_DIR, f"training_data_{horizon}yr.csv"), index=False)
+        print(f"  {horizon}-year horizon: {len(df)} samples")
 
     print("Building current player features...")
     current_df = build_current_player_features(season_features, players)

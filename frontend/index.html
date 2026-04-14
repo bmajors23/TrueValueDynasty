@@ -22,6 +22,10 @@
     --green-bg: rgba(16, 185, 129, 0.1);
     --red: #ef4444;
     --red-bg: rgba(239, 68, 68, 0.1);
+    --yellow: #f59e0b;
+    --yellow-bg: rgba(245, 158, 11, 0.1);
+    --purple: #a78bfa;
+    --purple-bg: rgba(167, 139, 250, 0.1);
     --qb: #ef4444;
     --rb: #3b82f6;
     --wr: #10b981;
@@ -129,6 +133,27 @@
   .pos-btn.active[data-pos="WR"] { border-color: var(--wr); color: var(--wr); background: rgba(16,185,129,0.1); }
   .pos-btn.active[data-pos="TE"] { border-color: var(--te); color: var(--te); background: rgba(245,158,11,0.1); }
 
+  .tier-filters {
+    display: flex;
+    gap: 0.375rem;
+  }
+
+  .tier-btn {
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .tier-btn:hover { border-color: var(--text-muted); color: var(--text); }
+  .tier-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
   .table-container {
     max-width: 1400px;
     margin: 0 auto;
@@ -162,7 +187,6 @@
   }
 
   thead th:hover { color: var(--text); }
-
   thead th.sorted { color: var(--accent); }
 
   thead th .sort-arrow {
@@ -174,10 +198,7 @@
 
   thead th.sorted .sort-arrow { opacity: 1; }
 
-  tbody tr {
-    transition: background 0.15s;
-  }
-
+  tbody tr { transition: background 0.15s; }
   tbody tr:hover { background: var(--surface-2); }
 
   tbody td {
@@ -215,37 +236,36 @@
   .pos-WR { background: rgba(16,185,129,0.15); color: var(--wr); }
   .pos-TE { background: rgba(245,158,11,0.15); color: var(--te); }
 
+  .tier-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: center;
+  }
+
+  .tier-Elite { background: var(--purple-bg); color: var(--purple); }
+  .tier-Star { background: var(--accent-glow); color: var(--accent); }
+  .tier-Starter { background: var(--green-bg); color: var(--green); }
+  .tier-Bench { background: var(--yellow-bg); color: var(--yellow); }
+  .tier-Waiver { background: rgba(100,116,139,0.1); color: var(--text-muted); }
+
   .value-cell {
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
-  .ktc-cell {
+  .value-range {
     color: var(--text-muted);
+    font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
   }
 
-  .diff-positive {
-    color: var(--green);
-    background: var(--green-bg);
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-weight: 600;
-    font-size: 0.8rem;
-  }
-
-  .diff-negative {
-    color: var(--red);
-    background: var(--red-bg);
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-weight: 600;
-    font-size: 0.8rem;
-  }
-
-  .diff-neutral {
+  .mkt-cell {
     color: var(--text-muted);
-    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
   }
 
   .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -304,13 +324,32 @@
     font-size: 0.7rem;
     font-weight: 600;
   }
+
+  .consistency-bar {
+    display: inline-block;
+    width: 40px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    position: relative;
+    vertical-align: middle;
+  }
+
+  .consistency-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.2s;
+  }
 </style>
 </head>
 <body>
 
 <div class="header">
   <h1><span>TrueValue</span> Dynasty</h1>
-  <p>ML-derived dynasty fantasy football valuations &mdash; 3-model approach: PPG prediction, survival probability, age curves</p>
+  <p>ML-driven dynasty fantasy football valuations &mdash; independent of crowd-sourced rankings</p>
 </div>
 
 <div class="stat-cards" id="statCards"></div>
@@ -327,6 +366,13 @@
     <button class="pos-btn" data-pos="WR">WR</button>
     <button class="pos-btn" data-pos="TE">TE</button>
   </div>
+  <div class="tier-filters">
+    <button class="tier-btn active" data-tier="ALL">All Tiers</button>
+    <button class="tier-btn" data-tier="Elite">Elite</button>
+    <button class="tier-btn" data-tier="Star">Star</button>
+    <button class="tier-btn" data-tier="Starter">Starter</button>
+    <button class="tier-btn" data-tier="Bench">Bench</button>
+  </div>
   <div class="count-badge" id="countBadge">0 players</div>
 </div>
 
@@ -337,13 +383,15 @@
         <th data-key="rank" data-dir="asc" class="sorted">Rk <span class="sort-arrow">&#9650;</span></th>
         <th>Player</th>
         <th>Pos</th>
+        <th>Tier</th>
         <th data-key="age" class="num">Age <span class="sort-arrow">&#9650;</span></th>
-        <th data-key="ppg" class="num">Cur PPG <span class="sort-arrow">&#9650;</span></th>
-        <th data-key="predPpg" class="num">Pred PPG <span class="sort-arrow">&#9650;</span></th>
-        <th data-key="value" class="num">True Value <span class="sort-arrow">&#9650;</span></th>
-        <th data-key="ktc" class="num">KTC <span class="sort-arrow">&#9650;</span></th>
-        <th data-key="diff" class="num">Diff <span class="sort-arrow">&#9650;</span></th>
-        <th data-key="diffPct" class="num">Diff % <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="ppg" class="num">PPG <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="predPpg" class="num">Proj <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="value" class="num">Value <span class="sort-arrow">&#9650;</span></th>
+        <th class="num">Range</th>
+        <th data-key="assetMult" class="num">Asset <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="consistency" class="num">Consist <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="marketValue" class="num">Mkt <span class="sort-arrow">&#9650;</span></th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -353,8 +401,9 @@
 <script>
 let players = [];
 let sortKey = 'value';
-let sortDir = -1; // -1 = descending
+let sortDir = -1;
 let filterPos = 'ALL';
+let filterTier = 'ALL';
 let searchQuery = '';
 
 async function loadData() {
@@ -366,31 +415,33 @@ async function loadData() {
 
 function updateStats() {
   const visible = getFiltered();
-  const withKtc = visible.filter(p => p.ktc !== null && p.value > 0);
-  const undervalued = withKtc.filter(p => p.diff > 0);
-  const overvalued = withKtc.filter(p => p.diff < 0);
+  const elite = visible.filter(p => p.tier === 'Elite');
+  const stars = visible.filter(p => p.tier === 'Star');
   const topValue = visible.length > 0 ? visible.reduce((a,b) => a.value > b.value ? a : b) : null;
+  const avgConsistency = visible.filter(p => p.value > 0).length > 0
+    ? (visible.filter(p => p.value > 0).reduce((s, p) => s + p.consistency, 0) / visible.filter(p => p.value > 0).length)
+    : 0;
 
   document.getElementById('statCards').innerHTML = `
     <div class="stat-card">
       <div class="label">Players Ranked</div>
       <div class="val">${visible.length}</div>
-      <div class="sub">${visible.filter(p=>p.value>0).length} with True Value &gt; 0</div>
+      <div class="sub">${visible.filter(p=>p.value>0).length} with value &gt; 0</div>
     </div>
     <div class="stat-card">
-      <div class="label">Undervalued by KTC</div>
-      <div class="val" style="color:var(--green)">${undervalued.length}</div>
-      <div class="sub">True Value &gt; Market Price</div>
+      <div class="label">Elite Tier</div>
+      <div class="val" style="color:var(--purple)">${elite.length}</div>
+      <div class="sub">Top 5% — cornerstone assets</div>
     </div>
     <div class="stat-card">
-      <div class="label">Overvalued by KTC</div>
-      <div class="val" style="color:var(--red)">${overvalued.length}</div>
-      <div class="sub">Market Price &gt; True Value</div>
+      <div class="label">Star Tier</div>
+      <div class="val" style="color:var(--accent)">${stars.length}</div>
+      <div class="sub">Top 15% — high-end starters</div>
     </div>
     <div class="stat-card">
-      <div class="label">#1 True Value</div>
+      <div class="label">#1 Overall</div>
       <div class="val">${topValue ? topValue.name : '—'}</div>
-      <div class="sub">${topValue ? topValue.value.toLocaleString() + ' pts' : ''}</div>
+      <div class="sub">${topValue ? topValue.value.toLocaleString() + ' (' + topValue.pos + ', age ' + topValue.age + ')' : ''}</div>
     </div>
   `;
 }
@@ -398,6 +449,7 @@ function updateStats() {
 function getFiltered() {
   return players
     .filter(p => filterPos === 'ALL' || p.pos === filterPos)
+    .filter(p => filterTier === 'ALL' || p.tier === filterTier)
     .filter(p => {
       if (!searchQuery) return true;
       return p.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -410,31 +462,39 @@ function getFiltered() {
     });
 }
 
+function consistencyColor(c) {
+  // Lower = more consistent (better). 0.3 = green, 1.0 = red
+  if (c <= 0.4) return 'var(--green)';
+  if (c <= 0.6) return 'var(--accent)';
+  if (c <= 0.8) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
 function render() {
   const filtered = getFiltered();
   document.getElementById('countBadge').textContent = `${filtered.length} players`;
 
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = filtered.map((p, i) => {
-    const diffHtml = p.diff !== null
-      ? `<span class="${p.diff > 0 ? 'diff-positive' : p.diff < 0 ? 'diff-negative' : 'diff-neutral'}">${p.diff > 0 ? '+' : ''}${p.diff.toLocaleString()}</span>`
-      : '<span class="diff-neutral">—</span>';
-    const diffPctHtml = p.diffPct !== null
-      ? `<span class="${p.diffPct > 0 ? 'diff-positive' : p.diffPct < 0 ? 'diff-negative' : 'diff-neutral'}">${p.diffPct > 0 ? '+' : ''}${p.diffPct}%</span>`
-      : '<span class="diff-neutral">—</span>';
     const missedHtml = p.missed > 0 ? ` <span class="missed-badge">${p.missed}yr</span>` : '';
+    const rangeHtml = `<span class="value-range">${p.valueLow.toLocaleString()} - ${p.valueHigh.toLocaleString()}</span>`;
+    const mktHtml = p.marketValue !== null ? p.marketValue.toLocaleString() : '<span style="color:var(--text-muted)">—</span>';
+    const consistWidth = Math.round((1 - p.consistency) * 100);
+    const consistHtml = `<span class="consistency-bar"><span class="consistency-fill" style="width:${consistWidth}%;background:${consistencyColor(p.consistency)}"></span></span> <span style="font-size:0.7rem;color:var(--text-muted)">${p.consistency.toFixed(2)}</span>`;
 
     return `<tr>
       <td class="rank-cell">${i + 1}</td>
       <td class="player-name">${p.name}${missedHtml}</td>
       <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
+      <td><span class="tier-badge tier-${p.tier}">${p.tier}</span></td>
       <td class="num">${p.age}</td>
       <td class="num">${p.ppg}</td>
       <td class="num">${p.predPpg}</td>
       <td class="num value-cell">${p.value.toLocaleString()}</td>
-      <td class="num ktc-cell">${p.ktc !== null ? p.ktc.toLocaleString() : '—'}</td>
-      <td class="num">${diffHtml}</td>
-      <td class="num">${diffPctHtml}</td>
+      <td class="num">${rangeHtml}</td>
+      <td class="num">${p.assetMult.toFixed(2)}</td>
+      <td class="num">${consistHtml}</td>
+      <td class="num mkt-cell">${mktHtml}</td>
     </tr>`;
   }).join('');
 }
@@ -457,6 +517,17 @@ document.querySelectorAll('.pos-btn').forEach(btn => {
   });
 });
 
+// Tier filters
+document.querySelectorAll('.tier-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filterTier = btn.dataset.tier;
+    updateStats();
+    render();
+  });
+});
+
 // Column sorting
 document.querySelectorAll('thead th[data-key]').forEach(th => {
   th.addEventListener('click', () => {
@@ -465,9 +536,8 @@ document.querySelectorAll('thead th[data-key]').forEach(th => {
       sortDir *= -1;
     } else {
       sortKey = key;
-      sortDir = -1; // default descending for new column
+      sortDir = -1;
     }
-    // Update sort arrows
     document.querySelectorAll('thead th').forEach(t => {
       t.classList.remove('sorted');
       t.querySelector('.sort-arrow') && (t.querySelector('.sort-arrow').innerHTML = '&#9650;');
