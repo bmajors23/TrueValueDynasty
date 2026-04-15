@@ -219,6 +219,8 @@
     font-weight: 600;
     min-width: 150px;
   }
+  .player-name a { cursor: pointer; }
+  .player-name a:hover { color: var(--accent) !important; }
 
   .pos-badge {
     display: inline-block;
@@ -484,7 +486,7 @@ function render() {
 
     return `<tr>
       <td class="rank-cell">${i + 1}</td>
-      <td class="player-name">${p.name}${missedHtml}</td>
+      <td class="player-name"><a href="player.html?rank=${p.rank}" style="color:var(--text);text-decoration:none;transition:color 0.15s" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text)'">${p.name}</a>${missedHtml}</td>
       <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
       <td><span class="tier-badge tier-${p.tier}">${p.tier}</span></td>
       <td class="num">${p.age}</td>

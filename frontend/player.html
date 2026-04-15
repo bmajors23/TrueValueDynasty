@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Player Profile — TrueValue Dynasty</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface-2: #1a2234;
+    --surface-3: #212d42;
+    --border: #1e2a3a;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #475569;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.15);
+    --green: #10b981;
+    --green-bg: rgba(16, 185, 129, 0.1);
+    --red: #ef4444;
+    --red-bg: rgba(239, 68, 68, 0.1);
+    --yellow: #f59e0b;
+    --yellow-bg: rgba(245, 158, 11, 0.1);
+    --purple: #a78bfa;
+    --purple-bg: rgba(167, 139, 250, 0.1);
+    --qb: #ef4444;
+    --rb: #3b82f6;
+    --wr: #10b981;
+    --te: #f59e0b;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 1.25rem;
+    transition: color 0.2s;
+  }
+  .back-link:hover { color: var(--text); text-decoration: none; }
+  .back-link svg { width: 14px; height: 14px; }
+
+  /* ── Player Header ── */
+  .player-header {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+  }
+
+  .player-photo {
+    width: 100px;
+    height: 100px;
+    border-radius: 16px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .player-photo img { width: 100%; height: 100%; object-fit: cover; }
+  .player-photo .placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: var(--text-dim);
+  }
+
+  .player-info { flex: 1; }
+  .player-info h1 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+  }
+
+  .player-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .pos-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .pos-QB { background: rgba(239,68,68,0.15); color: var(--qb); }
+  .pos-RB { background: rgba(59,130,246,0.15); color: var(--rb); }
+  .pos-WR { background: rgba(16,185,129,0.15); color: var(--wr); }
+  .pos-TE { background: rgba(245,158,11,0.15); color: var(--te); }
+
+  .tier-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 5px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .tier-Elite { background: var(--purple-bg); color: var(--purple); }
+  .tier-Star { background: var(--accent-glow); color: var(--accent); }
+  .tier-Starter { background: var(--green-bg); color: var(--green); }
+  .tier-Bench { background: var(--yellow-bg); color: var(--yellow); }
+  .tier-Waiver { background: rgba(100,116,139,0.1); color: var(--text-muted); }
+
+  .meta-text { color: var(--text-muted); font-size: 0.85rem; font-weight: 500; }
+
+  .header-value {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .header-value .big-value {
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .header-value .value-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-top: 0.2rem;
+  }
+  .header-value .value-range-text {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+  }
+  .header-value .rank-text {
+    font-size: 0.85rem;
+    color: var(--accent);
+    font-weight: 700;
+    margin-top: 0.3rem;
+  }
+
+  /* ── Grid Layout ── */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  @media (max-width: 768px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .player-header { flex-direction: column; }
+    .header-value { text-align: left; }
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }
+  .card-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+
+  /* ── Value Breakdown ── */
+  .breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(30, 42, 58, 0.5);
+  }
+  .breakdown-row:last-child { border-bottom: none; }
+  .breakdown-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .breakdown-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .breakdown-bar-wrap {
+    flex: 1;
+    margin: 0 1rem;
+    height: 6px;
+    background: var(--surface-2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .breakdown-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  .breakdown-total {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* ── Chart Canvas ── */
+  .chart-container {
+    position: relative;
+    width: 100%;
+    height: 220px;
+  }
+  .chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* ── Strengths / Weaknesses ── */
+  .sw-list { list-style: none; }
+  .sw-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgba(30, 42, 58, 0.3);
+  }
+  .sw-item:last-child { border-bottom: none; }
+  .sw-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+  .sw-icon.strength { background: var(--green-bg); color: var(--green); }
+  .sw-icon.weakness { background: var(--red-bg); color: var(--red); }
+  .sw-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .sw-detail {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.1rem;
+  }
+  .impact-high { border-left: 3px solid var(--green); padding-left: 0.5rem; }
+  .impact-high.weakness-item { border-left-color: var(--red); }
+
+  /* ── Stats Table ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 0.5rem;
+  }
+  .stat-box {
+    text-align: center;
+    padding: 0.6rem 0.3rem;
+    background: var(--surface-2);
+    border-radius: 8px;
+  }
+  .stat-box .stat-val {
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-box .stat-label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-top: 0.15rem;
+  }
+
+  /* ── History Table ── */
+  .history-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .history-table th {
+    text-align: left;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .history-table td {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8rem;
+    border-bottom: 1px solid rgba(30, 42, 58, 0.3);
+    font-variant-numeric: tabular-nums;
+  }
+  .history-table tr:hover { background: var(--surface-2); }
+
+  /* ── Market Comparison ── */
+  .market-compare {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    justify-content: center;
+    padding: 0.5rem 0;
+  }
+  .market-side {
+    text-align: center;
+  }
+  .market-side .market-val {
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+  .market-side .market-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .market-vs {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  .market-verdict {
+    text-align: center;
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .full-width { grid-column: 1 / -1; }
+
+  /* ── Loading ── */
+  .loading {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+  }
+  .loading .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 1rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="container" id="app">
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div>Loading player data...</div>
+  </div>
+</div>
+
+<script>
+let allPlayers = [];
+
+function getPlayerSlug(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+async function init() {
+  const res = await fetch('data.json');
+  allPlayers = await res.json();
+
+  const params = new URLSearchParams(window.location.search);
+  const rank = parseInt(params.get('rank'));
+  const slug = params.get('id');
+
+  let player;
+  if (rank) {
+    player = allPlayers.find(p => p.rank === rank);
+  } else if (slug) {
+    player = allPlayers.find(p => getPlayerSlug(p.name) === slug);
+  }
+
+  if (!player) {
+    document.getElementById('app').innerHTML = `
+      <a href="index.html" class="back-link"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to Rankings</a>
+      <div class="loading"><p>Player not found.</p></div>`;
+    return;
+  }
+
+  renderPlayer(player);
+}
+
+function posColor(pos) {
+  return { QB: 'var(--qb)', RB: 'var(--rb)', WR: 'var(--wr)', TE: 'var(--te)' }[pos] || 'var(--accent)';
+}
+
+function renderPlayer(p) {
+  document.title = `${p.name} — TrueValue Dynasty`;
+
+  const photoHtml = p.headshot
+    ? `<img src="${p.headshot}" alt="${p.name}" onerror="this.parentElement.innerHTML='<div class=placeholder>${p.name.split(' ').map(n=>n[0]).join('')}</div>'">`
+    : `<div class="placeholder">${p.name.split(' ').map(n=>n[0]).join('')}</div>`;
+
+  const teamStr = p.team ? ` · ${p.team}` : '';
+  const missedStr = p.missed > 0 ? ` · <span style="color:var(--yellow)">${p.missed}yr missed</span>` : '';
+
+  // Market comparison
+  let marketHtml = '';
+  if (p.marketValue) {
+    const diff = p.value - p.marketValue;
+    const diffPct = Math.round((diff / p.marketValue) * 100);
+    const verdict = diff > 500 ? { text: 'Potential Buy', cls: 'background:var(--green-bg);color:var(--green)' }
+      : diff < -500 ? { text: 'Potential Sell', cls: 'background:var(--red-bg);color:var(--red)' }
+      : { text: 'Fairly Valued', cls: 'background:var(--surface-2);color:var(--text-muted)' };
+    marketHtml = `
+      <div class="card">
+        <div class="card-title">Market Comparison</div>
+        <div class="market-compare">
+          <div class="market-side">
+            <div class="market-val" style="color:var(--accent)">${p.value.toLocaleString()}</div>
+            <div class="market-label">TrueValue</div>
+          </div>
+          <div class="market-vs">vs</div>
+          <div class="market-side">
+            <div class="market-val">${p.marketValue.toLocaleString()}</div>
+            <div class="market-label">Market (KTC)</div>
+          </div>
+        </div>
+        <div class="market-verdict" style="${verdict.cls}">
+          ${verdict.text} · ${diff > 0 ? '+' : ''}${diff.toLocaleString()} (${diff > 0 ? '+' : ''}${diffPct}%)
+        </div>
+      </div>`;
+  }
+
+  // Value breakdown
+  const breakdownItems = [
+    { label: 'Production Value', value: p.productionValue?.toFixed(1) || '—', detail: '8-year discounted PPG above replacement' },
+    { label: 'Career Phase', value: `×${p.phaseMult.toFixed(2)}`, pct: Math.min(100, (p.phaseMult / 1.8) * 100), color: p.phaseMult >= 1 ? 'var(--green)' : 'var(--red)' },
+    { label: 'Ceiling Premium', value: `×${p.ceilingMult.toFixed(2)}`, pct: Math.min(100, ((p.ceilingMult - 0.9) / 0.35) * 100), color: 'var(--purple)' },
+    { label: 'Positional Scarcity', value: `×${p.scarcityMult.toFixed(2)}`, pct: Math.min(100, ((p.scarcityMult - 0.9) / 0.7) * 100), color: 'var(--yellow)' },
+  ];
+
+  const breakdownHtml = breakdownItems.map(item => `
+    <div class="breakdown-row">
+      <span class="breakdown-label">${item.label}</span>
+      ${item.pct !== undefined ? `<div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${item.pct}%;background:${item.color}"></div></div>` : '<div style="flex:1"></div>'}
+      <span class="breakdown-value">${item.value}</span>
+    </div>
+  `).join('');
+
+  // Strengths & Weaknesses
+  const swHtml = (items, type) => items.map(item => `
+    <li class="sw-item ${item.impact === 'high' ? (type + '-item impact-high') : ''}">
+      <div class="sw-icon ${type}">${type === 'strength' ? '&#9650;' : '&#9660;'}</div>
+      <div>
+        <div class="sw-label">${item.label}</div>
+        <div class="sw-detail">${item.detail}</div>
+      </div>
+    </li>
+  `).join('');
+
+  // Latest season stats
+  const latest = p.history && p.history.length > 0 ? p.history[p.history.length - 1] : null;
+  let statsHtml = '';
+  if (latest) {
+    const stats = [];
+    stats.push({ label: 'Games', val: latest.games || '—' });
+    stats.push({ label: 'PPG', val: latest.ppg?.toFixed(1) || '—' });
+    stats.push({ label: 'Total Pts', val: latest.fantasy_points_ppr?.toFixed(0) || '—' });
+
+    if (p.pos === 'QB') {
+      if (latest.passing_yards) stats.push({ label: 'Pass Yds', val: latest.passing_yards.toLocaleString() });
+      if (latest.passing_tds) stats.push({ label: 'Pass TD', val: latest.passing_tds });
+      if (latest.interceptions != null) stats.push({ label: 'INT', val: latest.interceptions });
+      if (latest.rushing_yards) stats.push({ label: 'Rush Yds', val: latest.rushing_yards.toLocaleString() });
+      if (latest.rushing_tds) stats.push({ label: 'Rush TD', val: latest.rushing_tds });
+    } else if (p.pos === 'RB') {
+      if (latest.rushing_yards) stats.push({ label: 'Rush Yds', val: latest.rushing_yards.toLocaleString() });
+      if (latest.rushing_tds) stats.push({ label: 'Rush TD', val: latest.rushing_tds });
+      if (latest.carries) stats.push({ label: 'Carries', val: latest.carries });
+      if (latest.receptions) stats.push({ label: 'Rec', val: latest.receptions });
+      if (latest.receiving_yards) stats.push({ label: 'Rec Yds', val: latest.receiving_yards.toLocaleString() });
+      if (latest.targets) stats.push({ label: 'Targets', val: latest.targets });
+    } else if (p.pos === 'WR' || p.pos === 'TE') {
+      if (latest.receptions) stats.push({ label: 'Rec', val: latest.receptions });
+      if (latest.targets) stats.push({ label: 'Targets', val: latest.targets });
+      if (latest.receiving_yards) stats.push({ label: 'Rec Yds', val: latest.receiving_yards.toLocaleString() });
+      if (latest.receiving_tds) stats.push({ label: 'Rec TD', val: latest.receiving_tds });
+      if (latest.target_share) stats.push({ label: 'Tgt Share', val: (latest.target_share * 100).toFixed(1) + '%' });
+    }
+
+    statsHtml = `
+      <div class="card">
+        <div class="card-title">Latest Season Stats (${latest.season})</div>
+        <div class="stats-grid">
+          ${stats.map(s => `<div class="stat-box"><div class="stat-val">${s.val}</div><div class="stat-label">${s.label}</div></div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  // Season history table
+  let historyTableHtml = '';
+  if (p.history && p.history.length > 0) {
+    const isPassPos = p.pos === 'QB';
+    const histRows = [...p.history].reverse();
+    historyTableHtml = `
+      <div class="card full-width">
+        <div class="card-title">Season History</div>
+        <table class="history-table">
+          <thead><tr>
+            <th>Year</th><th>Team</th><th>G</th><th>PPG</th><th>Total</th>
+            ${isPassPos ? '<th>Pass Yds</th><th>Pass TD</th><th>INT</th><th>Rush Yds</th>'
+              : p.pos === 'RB' ? '<th>Rush Yds</th><th>Rush TD</th><th>Rec</th><th>Rec Yds</th>'
+              : '<th>Rec</th><th>Targets</th><th>Rec Yds</th><th>Rec TD</th>'}
+          </tr></thead>
+          <tbody>
+            ${histRows.map(s => {
+              const team = s.recent_team || '—';
+              return `<tr>
+                <td style="font-weight:600">${s.season}</td>
+                <td>${team}</td>
+                <td>${s.games || '—'}</td>
+                <td style="font-weight:600">${s.ppg?.toFixed(1) || '—'}</td>
+                <td>${s.fantasy_points_ppr?.toFixed(0) || '—'}</td>
+                ${isPassPos ? `<td>${s.passing_yards?.toLocaleString() || '—'}</td><td>${s.passing_tds || '—'}</td><td>${s.interceptions ?? '—'}</td><td>${s.rushing_yards?.toLocaleString() || '—'}</td>`
+                  : p.pos === 'RB' ? `<td>${s.rushing_yards?.toLocaleString() || '—'}</td><td>${s.rushing_tds || '—'}</td><td>${s.receptions || '—'}</td><td>${s.receiving_yards?.toLocaleString() || '—'}</td>`
+                  : `<td>${s.receptions || '—'}</td><td>${s.targets || '—'}</td><td>${s.receiving_yards?.toLocaleString() || '—'}</td><td>${s.receiving_tds || '—'}</td>`}
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  document.getElementById('app').innerHTML = `
+    <a href="index.html" class="back-link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Back to Rankings
+    </a>
+
+    <div class="player-header">
+      <div class="player-photo">${photoHtml}</div>
+      <div class="player-info">
+        <h1>${p.name}</h1>
+        <div class="player-meta">
+          <span class="pos-badge pos-${p.pos}">${p.pos}</span>
+          <span class="tier-badge tier-${p.tier}">${p.tier}</span>
+          <span class="meta-text">Age ${p.age}${teamStr}${missedStr}</span>
+        </div>
+      </div>
+      <div class="header-value">
+        <div class="big-value" style="color:${posColor(p.pos)}">${p.value.toLocaleString()}</div>
+        <div class="value-label">Dynasty Value</div>
+        <div class="value-range-text">${p.valueLow.toLocaleString()} — ${p.valueHigh.toLocaleString()}</div>
+        <div class="rank-text">#${p.rank} Overall</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Value Breakdown -->
+      <div class="card">
+        <div class="card-title">Value Breakdown</div>
+        ${breakdownHtml}
+        <div class="breakdown-row" style="margin-top:0.5rem;padding-top:0.75rem;border-top:2px solid var(--border)">
+          <span class="breakdown-label" style="font-weight:700;color:var(--text)">Total Asset Multiplier</span>
+          <span class="breakdown-total">×${p.assetMult.toFixed(2)}</span>
+        </div>
+        <div class="breakdown-row">
+          <span class="breakdown-label" style="font-weight:700;color:var(--text)">Final Dynasty Value</span>
+          <span class="breakdown-total">${p.value.toLocaleString()}</span>
+        </div>
+      </div>
+
+      <!-- Market Comparison / Key Numbers -->
+      <div style="display:flex;flex-direction:column;gap:1rem;">
+        ${marketHtml || `<div class="card"><div class="card-title">Market Comparison</div><div style="text-align:center;color:var(--text-muted);padding:1.5rem 0;font-size:0.85rem">No market data available</div></div>`}
+        <div class="card" style="flex:1">
+          <div class="card-title">Key Metrics</div>
+          <div class="stats-grid">
+            <div class="stat-box"><div class="stat-val">${p.ppg}</div><div class="stat-label">Current PPG</div></div>
+            <div class="stat-box"><div class="stat-val">${p.predPpg}</div><div class="stat-label">Proj PPG</div></div>
+            <div class="stat-box"><div class="stat-val">${p.consistency.toFixed(2)}</div><div class="stat-label">Consistency</div></div>
+            <div class="stat-box"><div class="stat-val">${p.replacementPpg}</div><div class="stat-label">Repl Level</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Projection Chart -->
+      <div class="card">
+        <div class="card-title">8-Year PPG Projection</div>
+        <div class="chart-container"><canvas id="projChart"></canvas></div>
+      </div>
+
+      <!-- Survival Curve -->
+      <div class="card">
+        <div class="card-title">Cumulative Survival Probability</div>
+        <div class="chart-container"><canvas id="survChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Strengths -->
+      <div class="card">
+        <div class="card-title">Strengths</div>
+        ${p.strengths.length > 0
+          ? `<ul class="sw-list">${swHtml(p.strengths, 'strength')}</ul>`
+          : '<div style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem 0">No notable strengths identified</div>'}
+      </div>
+
+      <!-- Weaknesses -->
+      <div class="card">
+        <div class="card-title">Weaknesses</div>
+        ${p.weaknesses.length > 0
+          ? `<ul class="sw-list">${swHtml(p.weaknesses, 'weakness')}</ul>`
+          : '<div style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem 0">No notable weaknesses identified</div>'}
+      </div>
+    </div>
+
+    ${statsHtml}
+    ${historyTableHtml}
+
+    ${p.history && p.history.length >= 2 ? `
+    <div class="card" style="margin-top:1rem">
+      <div class="card-title">Historical PPG Trend</div>
+      <div class="chart-container"><canvas id="histChart"></canvas></div>
+    </div>` : ''}
+  `;
+
+  // Render charts
+  renderProjectionChart(p);
+  renderSurvivalChart(p);
+  if (p.history && p.history.length >= 2) renderHistoryChart(p);
+}
+
+function renderProjectionChart(p) {
+  const ctx = document.getElementById('projChart');
+  if (!ctx || !p.projections || p.projections.length === 0) return;
+
+  const labels = p.projections.map(pr => `Yr ${pr.year}`);
+  const means = p.projections.map(pr => pr.ppgMean);
+  const lows = p.projections.map(pr => pr.ppgLow);
+  const highs = p.projections.map(pr => pr.ppgHigh);
+
+  const pc = posColor(p.pos);
+  const pcRgb = { QB: '239,68,68', RB: '59,130,246', WR: '16,185,129', TE: '245,158,11' }[p.pos] || '59,130,246';
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Projected PPG',
+          data: means,
+          borderColor: pc,
+          backgroundColor: `rgba(${pcRgb},0.1)`,
+          borderWidth: 2.5,
+          fill: false,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: pc,
+        },
+        {
+          label: 'Ceiling (90th)',
+          data: highs,
+          borderColor: `rgba(${pcRgb},0.3)`,
+          backgroundColor: `rgba(${pcRgb},0.06)`,
+          borderWidth: 1,
+          borderDash: [4, 3],
+          fill: '+1',
+          tension: 0.3,
+          pointRadius: 0,
+        },
+        {
+          label: 'Floor (10th)',
+          data: lows,
+          borderColor: `rgba(${pcRgb},0.3)`,
+          backgroundColor: 'transparent',
+          borderWidth: 1,
+          borderDash: [4, 3],
+          fill: false,
+          tension: 0.3,
+          pointRadius: 0,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a2234',
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          borderColor: '#1e2a3a',
+          borderWidth: 1,
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} PPG`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#64748b', font: { size: 11 } }, grid: { color: 'rgba(30,42,58,0.5)' } },
+        y: {
+          ticks: { color: '#64748b', font: { size: 11 }, callback: v => v.toFixed(0) },
+          grid: { color: 'rgba(30,42,58,0.5)' },
+          suggestedMin: 0,
+        }
+      }
+    }
+  });
+}
+
+function renderSurvivalChart(p) {
+  const ctx = document.getElementById('survChart');
+  if (!ctx || !p.projections || p.projections.length === 0) return;
+
+  const labels = p.projections.map(pr => `Yr ${pr.year}`);
+  const survPcts = p.projections.map(pr => (pr.survival * 100));
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Survival %',
+        data: survPcts,
+        borderColor: '#a78bfa',
+        backgroundColor: 'rgba(167,139,250,0.08)',
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#a78bfa',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a2234',
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          borderColor: '#1e2a3a',
+          borderWidth: 1,
+          callbacks: {
+            label: ctx => `${ctx.parsed.y.toFixed(1)}% chance still active`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#64748b', font: { size: 11 } }, grid: { color: 'rgba(30,42,58,0.5)' } },
+        y: {
+          ticks: { color: '#64748b', font: { size: 11 }, callback: v => v + '%' },
+          grid: { color: 'rgba(30,42,58,0.5)' },
+          min: 0,
+          max: 100,
+        }
+      }
+    }
+  });
+}
+
+function renderHistoryChart(p) {
+  const ctx = document.getElementById('histChart');
+  if (!ctx) return;
+
+  const labels = p.history.map(s => s.season.toString());
+  const ppgs = p.history.map(s => s.ppg);
+
+  const pc = posColor(p.pos);
+  const pcRgb = { QB: '239,68,68', RB: '59,130,246', WR: '16,185,129', TE: '245,158,11' }[p.pos] || '59,130,246';
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'PPG',
+        data: ppgs,
+        backgroundColor: `rgba(${pcRgb},0.4)`,
+        borderColor: pc,
+        borderWidth: 1.5,
+        borderRadius: 6,
+        barPercentage: 0.6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1a2234',
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+          borderColor: '#1e2a3a',
+          borderWidth: 1,
+          callbacks: {
+            label: ctx => `${ctx.parsed.y.toFixed(1)} PPG`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#64748b', font: { size: 11 } }, grid: { display: false } },
+        y: {
+          ticks: { color: '#64748b', font: { size: 11 } },
+          grid: { color: 'rgba(30,42,58,0.5)' },
+          suggestedMin: 0,
+        }
+      }
+    }
+  });
+}
+
+init();
+</script>
+</body>
+</html>

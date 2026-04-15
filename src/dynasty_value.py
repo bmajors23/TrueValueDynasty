@@ -436,6 +436,9 @@ def calculate_dynasty_values(league=None):
         anchor_ppg = anchor["ppg"]
         anchor_games = anchor["games"]
 
+        # Capture year-by-year projection data for player detail pages
+        yearly_projections = []
+
         for year in range(PROJECTION_YEARS):
             horizon = horizon_map[year]
 
@@ -508,6 +511,17 @@ def calculate_dynasty_values(league=None):
             total_value_low += cumulative_survival * par_low * discount
             total_value_high += cumulative_survival * par_high * discount
 
+            # Store projection for this year
+            yearly_projections.append({
+                "year": int(year + 1),
+                "projAge": round(float(age + year), 1),
+                "ppgMean": round(float(ppg_mean), 1),
+                "ppgLow": round(float(ppg_q10), 1),
+                "ppgHigh": round(float(ppg_q90), 1),
+                "survival": round(float(cumulative_survival), 3),
+                "seasonValue": round(float(cumulative_survival * par * discount), 2),
+            })
+
         # Staleness penalty
         if seasons_missed > 0:
             staleness_penalty = 0.85 ** seasons_missed
@@ -544,6 +558,7 @@ def calculate_dynasty_values(league=None):
             "phase_mult": round(phase_mult, 2),
             "ceiling_mult": round(ceiling_mult, 2),
             "scarcity_mult": round(scarcity_mult, 2),
+            "yearly_projections": yearly_projections,
         })
 
     results_df = pd.DataFrame(results)
@@ -686,39 +701,190 @@ def calculate_dynasty_values(league=None):
                   f"  ({row['rank_diff']:+.0f} spots)  Value: {row['dynasty_value']}")
 
     print(f"\n\nFull rankings saved to {os.path.join(DATA_DIR, 'dynasty_values.csv')}")
-    export_frontend_json(results_df)
+    export_frontend_json(results_df, season_features=season_features)
     return results_df
 
 
-def export_frontend_json(results_df):
-    """Export dynasty values to frontend/data.json."""
+def build_player_history(season_features):
+    """Build historical season-by-season data per player for detail pages."""
+    history = {}
+    cols_of_interest = [
+        "season", "games", "ppg", "recent_team",
+        "passing_yards", "passing_tds", "interceptions", "completions", "attempts",
+        "rushing_yards", "rushing_tds", "carries",
+        "receiving_yards", "receiving_tds", "receptions", "targets",
+        "target_share", "fantasy_points_ppr",
+    ]
+    available = [c for c in cols_of_interest if c in season_features.columns]
+
+    for pid, group in season_features.groupby("player_id"):
+        group = group.sort_values("season")
+        seasons = []
+        for _, row in group.iterrows():
+            s = {}
+            for col in available:
+                val = row.get(col)
+                if pd.isna(val):
+                    s[col] = None
+                elif isinstance(val, (np.integer, np.int64)):
+                    s[col] = int(val)
+                elif isinstance(val, (np.floating, np.float64, float)):
+                    s[col] = round(float(val), 2)
+                else:
+                    s[col] = val
+            seasons.append(s)
+        history[pid] = seasons
+    return history
+
+
+def derive_strengths_weaknesses(row):
+    """Derive human-readable strengths and weaknesses from player data."""
+    strengths = []
+    weaknesses = []
+
+    age = row.get("age", 30)
+    ppg = row.get("current_ppg", 0)
+    pred = row.get("predicted_next_ppg", 0)
+    phase = row.get("phase_mult", 1.0)
+    ceiling = row.get("ceiling_mult", 1.0)
+    scarcity = row.get("scarcity_mult", 1.0)
+    consistency = row.get("consistency", 1.0)
+    missed = row.get("seasons_missed", 0)
+    pos = row.get("position", "")
+
+    # Youth / age
+    peak_ages = {"QB": 26, "RB": 23, "WR": 24, "TE": 24}
+    peak = peak_ages.get(pos, 25)
+    if age <= peak:
+        strengths.append({"label": "Youth Premium", "detail": f"Age {age} — still appreciating toward peak ({peak})", "impact": "high"})
+    elif age <= peak + 3:
+        strengths.append({"label": "Prime Window", "detail": f"Age {age} — in or near prime years", "impact": "medium"})
+    elif age >= peak + 6:
+        weaknesses.append({"label": "Age Decline", "detail": f"Age {age} — well past positional peak of {peak}", "impact": "high"})
+    elif age >= peak + 3:
+        weaknesses.append({"label": "Post-Peak", "detail": f"Age {age} — past positional peak of {peak}", "impact": "medium"})
+
+    # Production
+    if ppg >= 20:
+        strengths.append({"label": "Elite Producer", "detail": f"{ppg} PPG — top-tier fantasy production", "impact": "high"})
+    elif ppg >= 15:
+        strengths.append({"label": "Strong Producer", "detail": f"{ppg} PPG — solid starter-level output", "impact": "medium"})
+    elif ppg < 8 and ppg > 0:
+        weaknesses.append({"label": "Low Production", "detail": f"{ppg} PPG — below starter threshold", "impact": "medium"})
+
+    # Projected growth/decline
+    if pred > ppg * 1.15 and ppg > 0:
+        strengths.append({"label": "Projected Growth", "detail": f"Model projects {pred} PPG (up from {ppg})", "impact": "medium"})
+    elif pred < ppg * 0.85 and ppg > 5:
+        weaknesses.append({"label": "Projected Decline", "detail": f"Model projects {pred} PPG (down from {ppg})", "impact": "medium"})
+
+    # Consistency
+    if consistency <= 0.4:
+        strengths.append({"label": "Rock Solid", "detail": "Extremely consistent year-to-year — low regression risk", "impact": "medium"})
+    elif consistency <= 0.55:
+        strengths.append({"label": "Consistent", "detail": "Reliable multi-year track record", "impact": "low"})
+    elif consistency >= 0.85:
+        weaknesses.append({"label": "Unproven", "detail": "Limited track record — high regression risk", "impact": "medium"})
+    elif consistency >= 0.7:
+        weaknesses.append({"label": "Volatile", "detail": "Production has varied significantly year-to-year", "impact": "low"})
+
+    # Ceiling
+    if ceiling >= 1.15:
+        strengths.append({"label": "High Ceiling", "detail": "Significant upside in projection range", "impact": "medium"})
+
+    # Scarcity
+    if scarcity >= 1.3:
+        strengths.append({"label": "Positional Scarcity", "detail": f"Few elite {pos}s available — scarcity premium", "impact": "high"})
+    elif scarcity >= 1.15:
+        strengths.append({"label": "Scarce Position", "detail": f"Limited elite {pos} supply adds value", "impact": "low"})
+
+    # Phase (depreciation)
+    if phase < 0.7:
+        weaknesses.append({"label": "Heavy Depreciation", "detail": "Age-based value decline significantly impacts dynasty worth", "impact": "high"})
+    elif phase < 0.85:
+        weaknesses.append({"label": "Depreciating", "detail": "Past peak — dynasty value declining with age", "impact": "medium"})
+
+    # Missed time
+    if missed >= 2:
+        weaknesses.append({"label": "Extended Absence", "detail": f"Missed {missed} season(s) — staleness penalty applied", "impact": "high"})
+    elif missed == 1:
+        weaknesses.append({"label": "Missed Time", "detail": "Missed a season — some uncertainty in projection", "impact": "low"})
+
+    return strengths, weaknesses
+
+
+def export_frontend_json(results_df, season_features=None):
+    """Export dynasty values to frontend/data.json with enriched player detail data."""
     import json as json_mod
     frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
     if not os.path.isdir(frontend_dir):
         return
 
+    # Build historical data from raw seasonal_stats.csv (has full stat totals)
+    player_history = {}
+    raw_stats_path = os.path.join(DATA_DIR, "seasonal_stats.csv")
+    if os.path.exists(raw_stats_path):
+        raw_stats = pd.read_csv(raw_stats_path)
+        # Aggregate weekly rows per player-season (nflverse data is per-week sometimes)
+        # The seasonal file should already be per-season, but ensure we have PPG
+        if "fantasy_points_ppr" in raw_stats.columns and "games" in raw_stats.columns:
+            raw_stats["ppg"] = raw_stats["fantasy_points_ppr"] / raw_stats["games"].clip(lower=1)
+        player_history = build_player_history(raw_stats)
+    elif season_features is not None:
+        player_history = build_player_history(season_features)
+
+    # Load player info for teams/headshots
+    players_path = os.path.join(DATA_DIR, "players.csv")
+    team_map = {}
+    headshot_map = {}
+    if os.path.exists(players_path):
+        players_info = pd.read_csv(players_path)
+        team_col = "team_abbr" if "team_abbr" in players_info.columns else "latest_team"
+        team_map = players_info.set_index("gsis_id")[team_col].to_dict()
+        if "headshot" in players_info.columns:
+            headshot_map = players_info.set_index("gsis_id")["headshot"].to_dict()
+        elif "headshot_url" in players_info.columns:
+            headshot_map = players_info.set_index("gsis_id")["headshot_url"].to_dict()
+
     records = []
     for rank, row in results_df.iterrows():
+        pid = row.get("player_id", "")
+        strengths, weaknesses = derive_strengths_weaknesses(row)
+
         rec = {
             "rank": int(rank),
+            "id": pid,
             "name": row.get("player_name", ""),
             "pos": row.get("position", ""),
+            "team": team_map.get(pid, ""),
             "tier": row.get("tier", ""),
             "age": round(float(row.get("age", 0)), 1),
             "ppg": round(float(row.get("current_ppg", 0)), 1),
             "predPpg": round(float(row.get("predicted_next_ppg", 0)), 1),
+            "replacementPpg": round(float(row.get("replacement_ppg", 0)), 1),
             "value": int(row.get("dynasty_value", 0)),
             "valueLow": int(row.get("value_low", 0)),
             "valueHigh": int(row.get("value_high", 0)),
+            "productionValue": round(float(row.get("production_value", 0)), 1),
             "consistency": round(float(row.get("consistency", 0)), 2),
             "assetMult": round(float(row.get("asset_multiplier", 1.0)), 2),
             "phaseMult": round(float(row.get("phase_mult", 1.0)), 2),
             "ceilingMult": round(float(row.get("ceiling_mult", 1.0)), 2),
             "scarcityMult": round(float(row.get("scarcity_mult", 1.0)), 2),
-            # KTC as market reference, not ground truth
             "marketValue": None if pd.isna(row.get("ktc_value")) else int(row["ktc_value"]),
             "missed": int(row.get("seasons_missed", 0)),
+            "headshot": headshot_map.get(pid, None),
+            # Enriched detail data
+            "projections": row.get("yearly_projections", []),
+            "history": player_history.get(pid, []),
+            "strengths": strengths,
+            "weaknesses": weaknesses,
         }
+        # Clean NaN headshots
+        if pd.isna(rec.get("headshot")):
+            rec["headshot"] = None
+        if pd.isna(rec.get("team")):
+            rec["team"] = ""
         records.append(rec)
 
     out_path = os.path.join(frontend_dir, "data.json")
