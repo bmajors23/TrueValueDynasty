@@ -7,3 +7,4 @@ data/*.html
 models/*.json
 frontend/data.json
 .DS_Store
+.vercel

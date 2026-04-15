@@ -154,6 +154,20 @@ def build_season_features(seasonal, players, draft, snaps):
         "first_downs_per_game", "receiving_air_yards_per_game", "racr",
         # Team context
         "team_offense_rank_pct", "team_fpts_per_game", "team_production_share",
+        # Game-level consistency (from weekly data)
+        "ppg_std", "ppg_cv", "ppg_floor", "ppg_ceiling", "ceiling_floor_ratio",
+        "boom_games_pct", "bust_games_pct",
+        # Trend / momentum (from weekly data)
+        "late_season_trend", "last_4_avg", "momentum",
+        "target_trend", "carry_trend", "target_share_trend",
+        # Situation features
+        "qb_quality", "team_pass_rate", "positional_dominance", "is_positional_alpha",
+        # Rookie / combine features
+        "forty_time", "combine_weight", "height_inches",
+        "vertical_jump", "broad_jump", "bench_reps",
+        "athleticism_score", "draft_capital_score",
+        "forty_time_zscore", "combine_weight_zscore", "height_inches_zscore",
+        "vertical_jump_zscore", "broad_jump_zscore", "bench_reps_zscore",
     ]
 
     id_cols = ["player_id", "season", "position"]
@@ -167,6 +181,274 @@ def build_season_features(seasonal, players, draft, snaps):
     output["ppg_target_col"] = reg["ppg"]
 
     return output
+
+
+def build_weekly_features(weekly_stats, players):
+    """Build game-level features from weekly data that seasonal aggregates miss.
+
+    These capture consistency, trends, and usage patterns that per-season
+    averages hide. Each feature is aggregated to the player-season level.
+    """
+    weekly = weekly_stats.copy()
+
+    # Filter to dynasty positions and regular season
+    if "position" in weekly.columns:
+        weekly = weekly[weekly["position"].isin(DYNASTY_POSITIONS)].copy()
+
+    # Only weeks where the player had some activity
+    weekly = weekly[weekly["fantasy_points_ppr"] > 0].copy()
+
+    features_list = []
+    for (pid, season), games in weekly.groupby(["player_id", "season"]):
+        if len(games) < 4:
+            continue  # need minimum sample
+
+        fpts = games["fantasy_points_ppr"].values
+        n_games = len(fpts)
+
+        row = {"player_id": pid, "season": season}
+
+        # --- Consistency features ---
+        row["ppg_std"] = np.std(fpts)
+        row["ppg_cv"] = np.std(fpts) / np.mean(fpts) if np.mean(fpts) > 0 else 1.0
+        row["ppg_floor"] = np.percentile(fpts, 10)
+        row["ppg_ceiling"] = np.percentile(fpts, 90)
+        row["ceiling_floor_ratio"] = row["ppg_ceiling"] / max(row["ppg_floor"], 0.1)
+        row["boom_games_pct"] = (fpts >= 20).sum() / n_games  # boom = 20+ PPR pts
+        row["bust_games_pct"] = (fpts < 5).sum() / n_games    # bust = <5 PPR pts
+
+        # --- Trend features (late season vs early season) ---
+        if n_games >= 8:
+            half = n_games // 2
+            first_half = np.mean(fpts[:half])
+            second_half = np.mean(fpts[half:])
+            row["late_season_trend"] = second_half - first_half
+            # Last 4 games momentum
+            row["last_4_avg"] = np.mean(fpts[-4:])
+            row["first_4_avg"] = np.mean(fpts[:4])
+            row["momentum"] = row["last_4_avg"] - row["first_4_avg"]
+        else:
+            row["late_season_trend"] = 0
+            row["last_4_avg"] = np.mean(fpts[-4:]) if n_games >= 4 else np.mean(fpts)
+            row["first_4_avg"] = np.mean(fpts[:4]) if n_games >= 4 else np.mean(fpts)
+            row["momentum"] = 0
+
+        # --- Usage trend features ---
+        if "targets" in games.columns:
+            targets = games["targets"].fillna(0).values
+            if n_games >= 8:
+                half = n_games // 2
+                row["target_trend"] = np.mean(targets[half:]) - np.mean(targets[:half])
+            else:
+                row["target_trend"] = 0
+
+        if "carries" in games.columns:
+            carries = games["carries"].fillna(0).values
+            if n_games >= 8:
+                half = n_games // 2
+                row["carry_trend"] = np.mean(carries[half:]) - np.mean(carries[:half])
+            else:
+                row["carry_trend"] = 0
+
+        # --- Target share trend ---
+        if "target_share" in games.columns:
+            ts = games["target_share"].fillna(0).values
+            row["target_share_avg"] = np.mean(ts)
+            if n_games >= 8:
+                half = n_games // 2
+                row["target_share_trend"] = np.mean(ts[half:]) - np.mean(ts[:half])
+            else:
+                row["target_share_trend"] = 0
+
+        features_list.append(row)
+
+    if not features_list:
+        return pd.DataFrame()
+
+    weekly_features = pd.DataFrame(features_list)
+    print(f"  Weekly features computed for {len(weekly_features)} player-seasons")
+    return weekly_features
+
+
+def build_situation_features(seasonal_stats, players):
+    """Build situation-aware features from existing data.
+
+    - QB quality index: how good is the QB on this player's team?
+    - Team pass/run tendency: scheme indicator
+    - Opportunity concentration: is this player the alpha on their team?
+    """
+    reg = seasonal_stats[seasonal_stats["season_type"] == "REG"].copy()
+    reg["ppg"] = reg["fantasy_points_ppr"] / reg["games"].clip(lower=1)
+
+    features_list = []
+
+    for season in reg["season"].unique():
+        season_data = reg[reg["season"] == season]
+
+        # Compute QB quality per team
+        qb_data = season_data[season_data["position"] == "QB"]
+        qb_quality = {}
+        for team in season_data["recent_team"].unique():
+            team_qbs = qb_data[qb_data["recent_team"] == team]
+            if len(team_qbs) > 0:
+                # Best QB on the team (by fantasy points)
+                best_qb = team_qbs.sort_values("fantasy_points_ppr", ascending=False).iloc[0]
+                qb_quality[team] = best_qb["ppg"]
+            else:
+                qb_quality[team] = 0
+
+        # Team pass/run ratio
+        team_tendency = {}
+        for team in season_data["recent_team"].unique():
+            team_players = season_data[season_data["recent_team"] == team]
+            total_pass_yards = team_players["passing_yards"].fillna(0).sum()
+            total_rush_yards = team_players["rushing_yards"].fillna(0).sum()
+            total_yards = total_pass_yards + total_rush_yards
+            if total_yards > 0:
+                team_tendency[team] = total_pass_yards / total_yards  # pass rate
+            else:
+                team_tendency[team] = 0.5
+
+        # Per-player situation features
+        for _, player in season_data.iterrows():
+            team = player["recent_team"]
+            pos = player["position"]
+            if pos not in DYNASTY_POSITIONS:
+                continue
+
+            row = {
+                "player_id": player["player_id"],
+                "season": season,
+                "qb_quality": qb_quality.get(team, 0),
+                "team_pass_rate": team_tendency.get(team, 0.5),
+            }
+
+            # Opportunity concentration: this player's share vs next best at same position
+            same_pos_team = season_data[
+                (season_data["recent_team"] == team) &
+                (season_data["position"] == pos)
+            ].sort_values("fantasy_points_ppr", ascending=False)
+
+            if len(same_pos_team) >= 2:
+                top_fpts = same_pos_team.iloc[0]["fantasy_points_ppr"]
+                second_fpts = same_pos_team.iloc[1]["fantasy_points_ppr"]
+                # How dominant is the #1 at this position on this team?
+                row["positional_dominance"] = top_fpts / max(top_fpts + second_fpts, 1)
+                # Is this player THE guy?
+                row["is_positional_alpha"] = 1 if player["player_id"] == same_pos_team.iloc[0]["player_id"] else 0
+            else:
+                row["positional_dominance"] = 1.0
+                row["is_positional_alpha"] = 1
+
+            features_list.append(row)
+
+    if not features_list:
+        return pd.DataFrame()
+
+    situation_features = pd.DataFrame(features_list)
+    print(f"  Situation features computed for {len(situation_features)} player-seasons")
+    return situation_features
+
+
+def build_rookie_features(players, draft, combine):
+    """Build rookie-specific features from combine + draft data.
+
+    For players with <2 NFL seasons, these features provide signal that
+    seasonal stats can't — athletic profile, draft capital context, and
+    combine performance relative to position peers.
+    """
+    # Map combine data to gsis_id via pfr_id
+    pfr_map = players[["gsis_id", "pfr_id"]].dropna().rename(
+        columns={"gsis_id": "player_id"}
+    )
+
+    combine_slim = combine[combine["pos"].isin(DYNASTY_POSITIONS)].copy()
+    combine_slim = combine_slim.rename(columns={
+        "pfr_id": "pfr_id_combine",
+        "pos": "combine_pos",
+        "ht": "combine_height",
+        "wt": "combine_weight",
+        "forty": "forty_time",
+        "bench": "bench_reps",
+        "vertical": "vertical_jump",
+        "broad_jump": "broad_jump",
+        "cone": "cone_drill",
+        "shuttle": "shuttle_time",
+        "season": "combine_season",
+        "draft_round": "combine_draft_round",
+        "draft_ovr": "combine_draft_ovr",
+    })
+
+    # Parse height to inches
+    def parse_height(h):
+        if pd.isna(h) or not isinstance(h, str):
+            return np.nan
+        parts = str(h).split("-")
+        if len(parts) == 2:
+            try:
+                return int(parts[0]) * 12 + int(parts[1])
+            except ValueError:
+                return np.nan
+        return np.nan
+
+    combine_slim["height_inches"] = combine_slim["combine_height"].apply(parse_height)
+
+    # Merge with player IDs via pfr_id
+    combine_slim = combine_slim.merge(
+        pfr_map, left_on="pfr_id_combine", right_on="pfr_id", how="inner"
+    ).drop(columns=["pfr_id"])
+
+    # Compute position-relative athleticism scores
+    # (how does this player compare to others at their position?)
+    for metric in ["forty_time", "combine_weight", "vertical_jump", "broad_jump",
+                   "bench_reps", "height_inches"]:
+        if metric in combine_slim.columns:
+            pos_stats = combine_slim.groupby("combine_pos")[metric].agg(["mean", "std"])
+            for pos in DYNASTY_POSITIONS:
+                if pos in pos_stats.index:
+                    mask = combine_slim["combine_pos"] == pos
+                    mean_val = pos_stats.loc[pos, "mean"]
+                    std_val = pos_stats.loc[pos, "std"]
+                    if std_val > 0:
+                        # Z-score relative to position (flip forty so higher = better)
+                        if metric == "forty_time":
+                            combine_slim.loc[mask, f"{metric}_zscore"] = (
+                                mean_val - combine_slim.loc[mask, metric]
+                            ) / std_val
+                        else:
+                            combine_slim.loc[mask, f"{metric}_zscore"] = (
+                                combine_slim.loc[mask, metric] - mean_val
+                            ) / std_val
+
+    # Compute composite athleticism score
+    zscore_cols = [c for c in combine_slim.columns if c.endswith("_zscore")]
+    if zscore_cols:
+        combine_slim["athleticism_score"] = combine_slim[zscore_cols].mean(axis=1)
+
+    # Draft capital score (more granular than the existing draft_round)
+    # Top 10 pick = elite capital, picks 11-32 = first round, etc.
+    combine_slim["draft_capital_score"] = np.where(
+        combine_slim["combine_draft_ovr"] <= 10, 1.0,
+        np.where(combine_slim["combine_draft_ovr"] <= 32, 0.8,
+        np.where(combine_slim["combine_draft_ovr"] <= 64, 0.6,
+        np.where(combine_slim["combine_draft_ovr"] <= 100, 0.4,
+        np.where(combine_slim["combine_draft_ovr"] <= 160, 0.2, 0.1)
+    ))))
+
+    # Select output columns
+    output_cols = ["player_id", "combine_season",
+                   "forty_time", "combine_weight", "height_inches",
+                   "vertical_jump", "broad_jump", "bench_reps",
+                   "athleticism_score", "draft_capital_score"]
+    # Add z-score columns
+    output_cols += [c for c in combine_slim.columns if c.endswith("_zscore")]
+
+    available = [c for c in output_cols if c in combine_slim.columns]
+    result = combine_slim[available].copy()
+
+    print(f"  Rookie/combine features for {len(result)} players")
+    print(f"  Features: {[c for c in available if c not in ['player_id', 'combine_season']]}")
+    return result
 
 
 def build_training_pairs(season_features):
@@ -315,6 +597,44 @@ def main():
     print("Building per-season features...")
     season_features = build_season_features(seasonal, players, draft, snaps)
     print(f"  {len(season_features)} player-seasons across {season_features['season'].nunique()} seasons")
+
+    # Weekly game-level features
+    weekly_path = os.path.join(DATA_DIR, "weekly_stats.csv")
+    if os.path.exists(weekly_path):
+        print("Building weekly game-level features...")
+        weekly_stats = pd.read_csv(weekly_path)
+        weekly_features = build_weekly_features(weekly_stats, players)
+        if len(weekly_features) > 0:
+            season_features = season_features.merge(
+                weekly_features, on=["player_id", "season"], how="left"
+            )
+            print(f"  Merged weekly features: {weekly_features.columns.tolist()}")
+    else:
+        print("  No weekly_stats.csv found — skipping game-level features")
+
+    # Situation features
+    print("Building situation features...")
+    situation_features = build_situation_features(seasonal, players)
+    if len(situation_features) > 0:
+        season_features = season_features.merge(
+            situation_features, on=["player_id", "season"], how="left"
+        )
+        print(f"  Merged situation features: {situation_features.columns.tolist()}")
+
+    # Rookie / combine features (static per player, merged to every season)
+    combine_path = os.path.join(DATA_DIR, "combine_data.csv")
+    if os.path.exists(combine_path):
+        print("Building rookie/combine features...")
+        combine = pd.read_csv(combine_path)
+        rookie_features = build_rookie_features(players, draft, combine)
+        if len(rookie_features) > 0:
+            # Drop combine_season — these are static player attributes
+            rookie_cols = [c for c in rookie_features.columns if c != "combine_season"]
+            season_features = season_features.merge(
+                rookie_features[rookie_cols], on="player_id", how="left"
+            )
+    else:
+        print("  No combine_data.csv found — skipping rookie features")
 
     print("Building training pairs (season N -> season N+1 PPG)...")
     training_df = build_training_pairs(season_features)

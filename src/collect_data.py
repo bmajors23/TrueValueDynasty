@@ -90,6 +90,17 @@ def collect_all():
     snaps.to_csv(os.path.join(DATA_DIR, "snap_counts.csv"), index=False)
     print(f"  Snap counts: {len(snaps)} rows")
 
+    print("Fetching weekly player stats from nflverse...")
+    weekly_url = "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats.parquet"
+    try:
+        weekly = pd.read_parquet(weekly_url)
+        weekly = weekly[weekly["season"] >= 2010]
+        weekly = weekly[weekly["season_type"] == "REG"]
+        weekly.to_csv(os.path.join(DATA_DIR, "weekly_stats.csv"), index=False)
+        print(f"  Weekly stats: {len(weekly)} rows, {weekly['season'].nunique()} seasons")
+    except Exception as e:
+        print(f"  Warning: could not fetch weekly stats: {e}")
+
     print(f"Fetching NGS data ({NGS_SEASONS[0]}-{NGS_SEASONS[-1]})...")
     for stat_type in ["passing", "rushing", "receiving"]:
         print(f"  NGS {stat_type}...")
