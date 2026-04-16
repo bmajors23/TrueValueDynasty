@@ -643,6 +643,26 @@ function renderPlayer(p) {
       </div>`;
   }
 
+  // Derived metrics from history for Key Metrics card
+  let yoyTrend = null, careerHigh = null, careerAvg = null, gamesLastYear = null, yearsPlayed = 0;
+  if (p.history && p.history.length > 0) {
+    yearsPlayed = p.history.length;
+    const latest = p.history[p.history.length - 1];
+    const prior = p.history.length >= 2 ? p.history[p.history.length - 2] : null;
+    gamesLastYear = latest.games ?? null;
+    careerHigh = Math.max(...p.history.map(s => s.ppg || 0));
+    const ppgs = p.history.map(s => s.ppg).filter(v => typeof v === 'number' && v > 0);
+    careerAvg = ppgs.length > 0 ? (ppgs.reduce((a,b) => a+b, 0) / ppgs.length) : null;
+    if (prior && prior.ppg > 0 && latest.ppg) {
+      yoyTrend = Math.round(((latest.ppg - prior.ppg) / prior.ppg) * 100);
+    }
+  }
+  const yoyColor = yoyTrend === null ? 'var(--text-muted)'
+    : yoyTrend >= 10 ? 'var(--green)'
+    : yoyTrend <= -10 ? 'var(--red)'
+    : 'var(--text)';
+  const yoyLabel = yoyTrend === null ? '—' : (yoyTrend > 0 ? `+${yoyTrend}%` : `${yoyTrend}%`);
+
   // Percentile computations (among players with positive value)
   const positiveValuePlayers = allPlayers.filter(x => x.value > 0);
   const posPlayers = positiveValuePlayers.filter(x => x.pos === p.pos);
@@ -885,8 +905,12 @@ function renderPlayer(p) {
           <div class="stats-grid">
             <div class="stat-box"><div class="stat-val">${p.ppg}</div><div class="stat-label">Current PPG</div></div>
             <div class="stat-box"><div class="stat-val">${p.predPpg}</div><div class="stat-label">Proj PPG</div></div>
+            <div class="stat-box"><div class="stat-val" style="color:${yoyColor}">${yoyLabel}</div><div class="stat-label">YoY Trend</div></div>
+            <div class="stat-box"><div class="stat-val">${careerHigh !== null ? careerHigh.toFixed(1) : '—'}</div><div class="stat-label">Career High</div></div>
+            <div class="stat-box"><div class="stat-val">${careerAvg !== null ? careerAvg.toFixed(1) : '—'}</div><div class="stat-label">Career Avg</div></div>
+            <div class="stat-box"><div class="stat-val">${gamesLastYear !== null ? gamesLastYear : '—'}</div><div class="stat-label">Games '25</div></div>
+            <div class="stat-box"><div class="stat-val">${yearsPlayed}</div><div class="stat-label">NFL Seasons</div></div>
             <div class="stat-box"><div class="stat-val">${p.consistency.toFixed(2)}</div><div class="stat-label">Consistency</div></div>
-            <div class="stat-box"><div class="stat-val">${p.replacementPpg}</div><div class="stat-label">Repl Level</div></div>
           </div>
         </div>
       </div>
