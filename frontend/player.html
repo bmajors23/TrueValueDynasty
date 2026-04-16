@@ -303,6 +303,68 @@
     color: var(--accent);
   }
 
+  /* Value context section */
+  .value-context {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px dashed rgba(30, 42, 58, 0.8);
+  }
+  .context-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.6rem;
+  }
+  .context-big-label {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .context-tier-chip {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    background: var(--accent-glow);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .percentile-bar-group {
+    margin-bottom: 0.75rem;
+  }
+  .percentile-bar-group:last-child { margin-bottom: 0; }
+  .percentile-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+  }
+  .percentile-bar-label .percentile-val {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .percentile-bar-track {
+    width: 100%;
+    height: 6px;
+    background: var(--surface-2);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .percentile-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--purple) 100%);
+  }
+  .percentile-bar-fill.dim {
+    background: linear-gradient(90deg, var(--text-dim) 0%, var(--text-muted) 100%);
+  }
+
   /* ── Chart Canvas ── */
   .chart-container {
     position: relative;
@@ -581,6 +643,30 @@ function renderPlayer(p) {
       </div>`;
   }
 
+  // Percentile computations (among players with positive value)
+  const positiveValuePlayers = allPlayers.filter(x => x.value > 0);
+  const posPlayers = positiveValuePlayers.filter(x => x.pos === p.pos);
+  const overallBetter = positiveValuePlayers.filter(x => x.value > p.value).length;
+  const overallPercentile = p.value > 0
+    ? Math.max(1, Math.round(((positiveValuePlayers.length - overallBetter) / positiveValuePlayers.length) * 100))
+    : null;
+  const posBetter = posPlayers.filter(x => x.value > p.value).length;
+  const posPercentile = p.value > 0
+    ? Math.max(1, Math.round(((posPlayers.length - posBetter) / posPlayers.length) * 100))
+    : null;
+  const topOverall = overallPercentile ? 100 - overallPercentile + 1 : null;  // "Top X%"
+  const topPos = posPercentile ? 100 - posPercentile + 1 : null;
+
+  // Determine descriptive label based on top position percentile
+  let contextLabel;
+  if (topPos === null) contextLabel = 'Below waiver line';
+  else if (topPos <= 5) contextLabel = `Cornerstone ${p.pos}`;
+  else if (topPos <= 15) contextLabel = `Elite ${p.pos} asset`;
+  else if (topPos <= 30) contextLabel = `High-end ${p.pos} starter`;
+  else if (topPos <= 50) contextLabel = `Solid ${p.pos}`;
+  else if (topPos <= 75) contextLabel = `Bench-level ${p.pos}`;
+  else contextLabel = `Depth ${p.pos}`;
+
   // Build contextual tooltip data from global meta
   const peakAges = meta.peakAges || { QB: 26, RB: 23, WR: 24, TE: 24 };
   const peak = peakAges[p.pos] || 25;
@@ -756,6 +842,39 @@ function renderPlayer(p) {
           <span class="breakdown-label" style="font-weight:700;color:var(--text)">Final Dynasty Value</span>
           <span class="breakdown-total">${p.value.toLocaleString()}</span>
         </div>
+
+        <!-- Value Context -->
+        ${p.value > 0 ? `
+        <div class="value-context">
+          <div class="context-label-row">
+            <div>
+              <div class="context-big-label">${contextLabel}</div>
+              <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem">Ranks #${p.posRank} of ${posPlayers.length} ${p.pos}s · #${p.rank} of ${positiveValuePlayers.length} ranked</div>
+            </div>
+            <span class="context-tier-chip tier-${p.tier}" style="background:var(--${p.tier === 'Elite' ? 'purple' : p.tier === 'Star' ? 'accent' : p.tier === 'Starter' ? 'green' : p.tier === 'Bench' ? 'yellow' : 'text-muted'}-bg);color:var(--${p.tier === 'Elite' ? 'purple' : p.tier === 'Star' ? 'accent' : p.tier === 'Starter' ? 'green' : p.tier === 'Bench' ? 'yellow' : 'text-muted'})">${p.tier}</span>
+          </div>
+
+          <div class="percentile-bar-group">
+            <div class="percentile-bar-label">
+              <span>Position percentile</span>
+              <span class="percentile-val">Top ${topPos}% of ${p.pos}s</span>
+            </div>
+            <div class="percentile-bar-track">
+              <div class="percentile-bar-fill" style="width:${posPercentile}%"></div>
+            </div>
+          </div>
+
+          <div class="percentile-bar-group">
+            <div class="percentile-bar-label">
+              <span>Overall percentile</span>
+              <span class="percentile-val">Top ${topOverall}% of all players</span>
+            </div>
+            <div class="percentile-bar-track">
+              <div class="percentile-bar-fill dim" style="width:${overallPercentile}%"></div>
+            </div>
+          </div>
+        </div>
+        ` : ''}
       </div>
 
       <!-- Market Comparison / Key Numbers -->
