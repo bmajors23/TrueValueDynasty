@@ -408,7 +408,7 @@
         <th data-key="predPpg" class="num">Proj <span class="sort-arrow">&#9650;</span></th>
         <th data-key="value" class="num">Value <span class="sort-arrow">&#9650;</span></th>
         <th class="num">Range</th>
-        <th data-key="assetMult" class="num" title="Dynasty Trend — how much a player's dynasty value is above or below their pure production value, based on age, upside, and positional scarcity.">Trend <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="ppgTrend" class="num" title="Year-over-year PPG change — this season's PPG vs previous season's PPG. Shows who's ascending or declining at a season level.">Trend <span class="sort-arrow">&#9650;</span></th>
         <th data-key="consistency" class="num">Consist <span class="sort-arrow">&#9650;</span></th>
         <th data-key="marketValue" class="num">Mkt <span class="sort-arrow">&#9650;</span></th>
       </tr>
@@ -428,6 +428,20 @@ let searchQuery = '';
 async function loadData() {
   const res = await fetch('data.json');
   players = await res.json();
+  // Compute year-over-year PPG trend for each player from history
+  players.forEach(p => {
+    if (p.history && p.history.length >= 2) {
+      const latest = p.history[p.history.length - 1];
+      const prior = p.history[p.history.length - 2];
+      if (latest?.ppg && prior?.ppg && prior.ppg > 0) {
+        p.ppgTrend = Math.round(((latest.ppg - prior.ppg) / prior.ppg) * 100);
+      } else {
+        p.ppgTrend = null;
+      }
+    } else {
+      p.ppgTrend = null;
+    }
+  });
   updateStats();
   render();
 }
@@ -501,16 +515,21 @@ function render() {
     const consistWidth = Math.round((1 - p.consistency) * 100);
     const consistHtml = `<span class="consistency-bar"><span class="consistency-fill" style="width:${consistWidth}%;background:${consistencyColor(p.consistency)}"></span></span> <span style="font-size:0.7rem;color:var(--text-muted)">${p.consistency.toFixed(2)}</span>`;
 
-    // Trend: convert asset multiplier to an intuitive +/- percentage
-    const trendPct = Math.round((p.assetMult - 1) * 100);
-    let trendCls, trendArrow;
-    if (trendPct >= 30)      { trendCls = 'trend-up-strong'; trendArrow = '&#9650;&#9650;'; }
-    else if (trendPct >= 10) { trendCls = 'trend-up'; trendArrow = '&#9650;'; }
-    else if (trendPct >= -5) { trendCls = 'trend-neutral'; trendArrow = '—'; }
-    else if (trendPct >= -25){ trendCls = 'trend-down'; trendArrow = '&#9660;'; }
-    else                     { trendCls = 'trend-down-strong'; trendArrow = '&#9660;&#9660;'; }
-    const trendLabel = trendPct > 0 ? `+${trendPct}%` : trendPct < 0 ? `${trendPct}%` : '0%';
-    const trendHtml = `<span class="${trendCls}"><span class="arrow">${trendArrow}</span>${trendLabel}</span>`;
+    // Trend: year-over-year PPG change from history
+    const trendPct = p.ppgTrend;
+    let trendHtml;
+    if (trendPct === null || trendPct === undefined) {
+      trendHtml = `<span class="trend-neutral" style="opacity:0.5" title="No prior season data">—</span>`;
+    } else {
+      let trendCls, trendArrow;
+      if (trendPct >= 25)      { trendCls = 'trend-up-strong'; trendArrow = '&#9650;&#9650;'; }
+      else if (trendPct >= 8)  { trendCls = 'trend-up'; trendArrow = '&#9650;'; }
+      else if (trendPct >= -8) { trendCls = 'trend-neutral'; trendArrow = '—'; }
+      else if (trendPct >= -25){ trendCls = 'trend-down'; trendArrow = '&#9660;'; }
+      else                     { trendCls = 'trend-down-strong'; trendArrow = '&#9660;&#9660;'; }
+      const trendLabel = trendPct > 0 ? `+${trendPct}%` : trendPct < 0 ? `${trendPct}%` : '0%';
+      trendHtml = `<span class="${trendCls}"><span class="arrow">${trendArrow}</span>${trendLabel}</span>`;
+    }
 
     return `<tr>
       <td class="rank-cell">${i + 1}</td>
