@@ -572,10 +572,21 @@ def calculate_dynasty_values(league=None):
 
     results_df["dynasty_value"] = (raw * scale_factor).round(0).astype(int)
 
-    for col_raw, col_scaled in [("dynasty_value_low", "value_low"),
-                                 ("dynasty_value_high", "value_high")]:
-        v = results_df[col_raw].clip(lower=0)
-        results_df[col_scaled] = (v * scale_factor).round(0).astype(int)
+    # Range shrinkage: accumulating q10/q90 independently over 8 years
+    # overstates realistic uncertainty (worst-case compounds unrealistically).
+    # Shrink the range toward the point estimate for a tighter, more usable band.
+    # shrink=0.65 blends 65% mean + 35% raw quantile → ~50% confidence interval.
+    RANGE_SHRINK = 0.65
+
+    raw_low = results_df["dynasty_value_low"].clip(lower=0) * scale_factor
+    raw_high = results_df["dynasty_value_high"].clip(lower=0) * scale_factor
+    center = results_df["dynasty_value"].astype(float)
+
+    tight_low = center * RANGE_SHRINK + raw_low * (1 - RANGE_SHRINK)
+    tight_high = center * RANGE_SHRINK + raw_high * (1 - RANGE_SHRINK)
+
+    results_df["value_low"] = tight_low.clip(lower=0).round(0).astype(int)
+    results_df["value_high"] = tight_high.round(0).astype(int)
 
     # Map player names
     players = pd.read_csv(os.path.join(DATA_DIR, "players.csv"))
