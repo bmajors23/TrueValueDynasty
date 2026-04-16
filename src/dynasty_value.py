@@ -846,6 +846,28 @@ def export_frontend_json(results_df, season_features=None, elite_counts=None,
     elif season_features is not None:
         player_history = build_player_history(season_features)
 
+    # Compute positional rank (model) and market ranks (KTC overall + positional)
+    pos_rank_map = {}
+    for pos_name in ["QB", "RB", "WR", "TE"]:
+        pos_df = results_df[results_df["position"] == pos_name].sort_values(
+            "dynasty_value", ascending=False
+        )
+        for i, (_, r) in enumerate(pos_df.iterrows(), start=1):
+            pos_rank_map[r["player_id"]] = i
+
+    market_overall_rank = {}
+    market_pos_rank = {}
+    if "ktc_value" in results_df.columns:
+        ktc_df = results_df.dropna(subset=["ktc_value"]).sort_values(
+            "ktc_value", ascending=False
+        ).reset_index(drop=True)
+        for i, row in ktc_df.iterrows():
+            market_overall_rank[row["player_id"]] = i + 1
+        for pos_name in ["QB", "RB", "WR", "TE"]:
+            pos_ktc = ktc_df[ktc_df["position"] == pos_name].reset_index(drop=True)
+            for i, row in pos_ktc.iterrows():
+                market_pos_rank[row["player_id"]] = i + 1
+
     # Load player info for teams/headshots
     players_path = os.path.join(DATA_DIR, "players.csv")
     team_map = {}
@@ -866,6 +888,7 @@ def export_frontend_json(results_df, season_features=None, elite_counts=None,
 
         rec = {
             "rank": int(rank),
+            "posRank": int(pos_rank_map.get(pid, 0)),
             "id": pid,
             "name": row.get("player_name", ""),
             "pos": row.get("position", ""),
@@ -885,6 +908,8 @@ def export_frontend_json(results_df, season_features=None, elite_counts=None,
             "ceilingMult": round(float(row.get("ceiling_mult", 1.0)), 2),
             "scarcityMult": round(float(row.get("scarcity_mult", 1.0)), 2),
             "marketValue": None if pd.isna(row.get("ktc_value")) else int(row["ktc_value"]),
+            "marketRank": market_overall_rank.get(pid),
+            "marketPosRank": market_pos_rank.get(pid),
             "missed": int(row.get("seasons_missed", 0)),
             "headshot": headshot_map.get(pid, None),
             # Enriched detail data

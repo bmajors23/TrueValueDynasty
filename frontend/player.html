@@ -400,31 +400,52 @@
   .history-table tr:hover { background: var(--surface-2); }
 
   /* ── Market Comparison ── */
-  .market-compare {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    justify-content: center;
-    padding: 0.5rem 0;
+  .rank-compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
   }
-  .market-side {
+  .rank-compare-cell {
+    background: var(--surface-2);
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
     text-align: center;
   }
-  .market-side .market-val {
-    font-size: 1.5rem;
-    font-weight: 700;
-  }
-  .market-side .market-label {
-    font-size: 0.65rem;
+  .rank-compare-cell .rank-label {
+    font-size: 0.6rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-muted);
     font-weight: 600;
   }
-  .market-vs {
-    font-size: 0.85rem;
-    color: var(--text-dim);
+  .rank-compare-cell .rank-primary {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-top: 0.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .rank-compare-cell .rank-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 0.1rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .rank-diff-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.78rem;
     font-weight: 600;
+    margin-top: 0.25rem;
+  }
+  .rank-diff-bar .diff-num {
+    font-size: 0.9rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
   .market-verdict {
     text-align: center;
@@ -514,30 +535,48 @@ function renderPlayer(p) {
   const teamStr = p.team ? ` · ${p.team}` : '';
   const missedStr = p.missed > 0 ? ` · <span style="color:var(--yellow)">${p.missed}yr missed</span>` : '';
 
-  // Market comparison
+  // Market comparison — rank-based (scale-independent, trade-actionable)
   let marketHtml = '';
-  if (p.marketValue) {
-    const diff = p.value - p.marketValue;
-    const diffPct = Math.round((diff / p.marketValue) * 100);
-    const verdict = diff > 500 ? { text: 'Potential Buy', cls: 'background:var(--green-bg);color:var(--green)' }
-      : diff < -500 ? { text: 'Potential Sell', cls: 'background:var(--red-bg);color:var(--red)' }
-      : { text: 'Fairly Valued', cls: 'background:var(--surface-2);color:var(--text-muted)' };
+  if (p.marketRank) {
+    // Positional rank gap is the primary signal — cleaner than overall
+    const posGap = p.marketPosRank - p.posRank;  // positive = model ranks higher
+    const overallGap = p.marketRank - p.rank;
+
+    // Verdict thresholds based on positional rank gap
+    let verdict;
+    if (posGap >= 3) verdict = { text: 'Strong Buy Signal', desc: 'Model rates meaningfully above market', cls: 'background:var(--green-bg);color:var(--green)' };
+    else if (posGap >= 1) verdict = { text: 'Buy Lean', desc: 'Model slightly higher than market', cls: 'background:rgba(16,185,129,0.06);color:#4ade80' };
+    else if (posGap <= -3) verdict = { text: 'Strong Sell Signal', desc: 'Market values well above model', cls: 'background:var(--red-bg);color:var(--red)' };
+    else if (posGap <= -1) verdict = { text: 'Sell Lean', desc: 'Model slightly lower than market', cls: 'background:rgba(239,68,68,0.06);color:#fb923c' };
+    else verdict = { text: 'Aligned With Market', desc: 'Model and market agree', cls: 'background:var(--surface-2);color:var(--text-muted)' };
+
+    const gapStr = (n) => n > 0 ? `+${n}` : n < 0 ? `${n}` : '0';
+    const gapColor = (n) => n > 0 ? 'var(--green)' : n < 0 ? 'var(--red)' : 'var(--text-muted)';
+
     marketHtml = `
       <div class="card">
-        <div class="card-title">Market Comparison</div>
-        <div class="market-compare">
-          <div class="market-side">
-            <div class="market-val" style="color:var(--accent)">${p.value.toLocaleString()}</div>
-            <div class="market-label">TrueValue</div>
+        <div class="card-title">Market Comparison (vs KTC)</div>
+        <div class="rank-compare-grid">
+          <div class="rank-compare-cell" style="border:1px solid rgba(59,130,246,0.2)">
+            <div class="rank-label">TrueValue Rank</div>
+            <div class="rank-primary" style="color:var(--accent)">${p.pos}${p.posRank}</div>
+            <div class="rank-sub">#${p.rank} overall</div>
           </div>
-          <div class="market-vs">vs</div>
-          <div class="market-side">
-            <div class="market-val">${p.marketValue.toLocaleString()}</div>
-            <div class="market-label">Market (KTC)</div>
+          <div class="rank-compare-cell">
+            <div class="rank-label">Market Rank (KTC)</div>
+            <div class="rank-primary">${p.pos}${p.marketPosRank}</div>
+            <div class="rank-sub">#${p.marketRank} overall</div>
           </div>
         </div>
+        <div class="rank-diff-bar" style="background:var(--surface-2)">
+          <span style="color:var(--text-muted)">Positional gap:</span>
+          <span class="diff-num" style="color:${gapColor(posGap)}">${gapStr(posGap)} spots</span>
+          <span style="color:var(--text-dim)">·</span>
+          <span style="color:var(--text-muted)">Overall gap:</span>
+          <span class="diff-num" style="color:${gapColor(overallGap)}">${gapStr(overallGap)}</span>
+        </div>
         <div class="market-verdict" style="${verdict.cls}">
-          ${verdict.text} · ${diff > 0 ? '+' : ''}${diff.toLocaleString()} (${diff > 0 ? '+' : ''}${diffPct}%)
+          ${verdict.text} <span style="opacity:0.7;font-weight:500;font-size:0.7rem">· ${verdict.desc}</span>
         </div>
       </div>`;
   }
