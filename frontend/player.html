@@ -207,6 +207,72 @@
     padding: 0.5rem 0;
     border-bottom: 1px solid rgba(30, 42, 58, 0.5);
   }
+
+  /* Help icons with tooltips */
+  .help-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    font-weight: 700;
+    font-style: italic;
+    font-family: Georgia, serif;
+    cursor: help;
+    margin-left: 0.35rem;
+    position: relative;
+    transition: all 0.15s;
+    line-height: 1;
+  }
+  .help-icon:hover { background: var(--accent); color: white; }
+  .help-icon .tooltip {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface-3);
+    color: var(--text);
+    padding: 0.6rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 0.72rem;
+    font-weight: 400;
+    font-style: normal;
+    font-family: 'Inter', sans-serif;
+    line-height: 1.5;
+    width: 260px;
+    text-align: left;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    z-index: 100;
+    transition: opacity 0.15s;
+    pointer-events: none;
+    white-space: normal;
+  }
+  .help-icon .tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--surface-3);
+  }
+  .help-icon:hover .tooltip { visibility: visible; opacity: 1; }
+  .help-icon .tooltip strong { color: var(--accent); font-weight: 600; }
+  .help-icon .tooltip .ctx {
+    display: block;
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.68rem;
+  }
   .breakdown-row:last-child { border-bottom: none; }
   .breakdown-label {
     font-size: 0.8rem;
@@ -401,6 +467,7 @@
 
 <script>
 let allPlayers = [];
+let meta = {};
 
 function getPlayerSlug(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -408,7 +475,9 @@ function getPlayerSlug(name) {
 
 async function init() {
   const res = await fetch('data.json');
-  allPlayers = await res.json();
+  const json = await res.json();
+  allPlayers = Array.isArray(json) ? json : json.players;
+  meta = json.meta || {};
 
   const params = new URLSearchParams(window.location.search);
   const rank = parseInt(params.get('rank'));
@@ -473,17 +542,55 @@ function renderPlayer(p) {
       </div>`;
   }
 
+  // Build contextual tooltip data from global meta
+  const peakAges = meta.peakAges || { QB: 26, RB: 23, WR: 24, TE: 24 };
+  const peak = peakAges[p.pos] || 25;
+  const eliteCounts = meta.eliteCounts || {};
+  const replacementPpg = meta.replacementPpg || {};
+  const eliteCountPos = eliteCounts[p.pos] ?? '—';
+  const replPos = replacementPpg[p.pos] ?? '—';
+  const eliteThresh = typeof replPos === 'number' ? (replPos * 1.5).toFixed(1) : '—';
+
+  const phaseDir = p.phaseMult >= 1.05 ? 'Appreciating' : p.phaseMult <= 0.95 ? 'Depreciating' : 'At peak';
+  const ageVsPeak = p.age <= peak ? `${(peak - p.age).toFixed(1)} years below peak — still gaining value`
+                                   : `${(p.age - peak).toFixed(1)} years past peak — losing value with age`;
+
   // Value breakdown
   const breakdownItems = [
-    { label: 'Production Value', value: p.productionValue?.toFixed(1) || '—', detail: '8-year discounted PPG above replacement' },
-    { label: 'Career Phase', value: `×${p.phaseMult.toFixed(2)}`, pct: Math.min(100, (p.phaseMult / 1.8) * 100), color: p.phaseMult >= 1 ? 'var(--green)' : 'var(--red)' },
-    { label: 'Ceiling Premium', value: `×${p.ceilingMult.toFixed(2)}`, pct: Math.min(100, ((p.ceilingMult - 0.9) / 0.35) * 100), color: 'var(--purple)' },
-    { label: 'Positional Scarcity', value: `×${p.scarcityMult.toFixed(2)}`, pct: Math.min(100, ((p.scarcityMult - 0.9) / 0.7) * 100), color: 'var(--yellow)' },
+    {
+      label: 'Production Value',
+      value: p.productionValue?.toFixed(1) || '—',
+      tooltip: `<strong>Production Value</strong><br>The raw fantasy value this player is projected to produce above waiver-wire replacement level, summed over 8 years with a 10% annual discount rate applied. Weighted by survival probability each year.<span class="ctx">Replacement ${p.pos}: ${replPos} PPG · Your proj: ${p.predPpg} PPG</span>`
+    },
+    {
+      label: 'Career Phase',
+      value: `×${p.phaseMult.toFixed(2)}`,
+      pct: Math.min(100, (p.phaseMult / 1.8) * 100),
+      color: p.phaseMult >= 1 ? 'var(--green)' : 'var(--red)',
+      tooltip: `<strong>Career Phase</strong><br>Dynasty premium/discount based on age curve. Players below peak age are appreciating assets; past peak they depreciate. Production-aware — still-elite veterans depreciate slower.<span class="ctx">${p.pos} peak age: ${peak} · Current age: ${p.age}<br>${phaseDir} · ${ageVsPeak}</span>`
+    },
+    {
+      label: 'Ceiling Premium',
+      value: `×${p.ceilingMult.toFixed(2)}`,
+      pct: Math.min(100, ((p.ceilingMult - 0.9) / 0.35) * 100),
+      color: 'var(--purple)',
+      tooltip: `<strong>Ceiling Premium</strong><br>Bonus for players with high upside in their projection range — specifically how much the 90th percentile exceeds the mean projection. Youth amplifies this (young + high ceiling = dynasty gold).<span class="ctx">Range: ${p.valueLow.toLocaleString()} — ${p.valueHigh.toLocaleString()}</span>`
+    },
+    {
+      label: 'Positional Scarcity',
+      value: `×${p.scarcityMult.toFixed(2)}`,
+      pct: Math.min(100, ((p.scarcityMult - 0.9) / 0.7) * 100),
+      color: 'var(--yellow)',
+      tooltip: `<strong>Positional Scarcity</strong><br>Rarity of elite talent at this position right now. Counts players scoring ≥1.5× replacement PPG (${p.pos} elite threshold: ${eliteThresh} PPG). Fewer elite options = higher premium.<span class="ctx">Current elite ${p.pos}s: <strong>${eliteCountPos}</strong><br>15+ elite = no premium · Cap: ×1.60</span>`
+    },
   ];
 
   const breakdownHtml = breakdownItems.map(item => `
     <div class="breakdown-row">
-      <span class="breakdown-label">${item.label}</span>
+      <span class="breakdown-label">
+        ${item.label}
+        <span class="help-icon">?<span class="tooltip">${item.tooltip}</span></span>
+      </span>
       ${item.pct !== undefined ? `<div class="breakdown-bar-wrap"><div class="breakdown-bar" style="width:${item.pct}%;background:${item.color}"></div></div>` : '<div style="flex:1"></div>'}
       <span class="breakdown-value">${item.value}</span>
     </div>

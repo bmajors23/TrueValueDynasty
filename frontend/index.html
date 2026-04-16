@@ -430,7 +430,9 @@ let searchQuery = '';
 
 async function loadData() {
   const res = await fetch('data.json');
-  players = await res.json();
+  const json = await res.json();
+  // Support both wrapped ({meta, players}) and raw-array formats
+  players = Array.isArray(json) ? json : json.players;
   // Compute year-over-year PPG trend for each player from history
   players.forEach(p => {
     if (p.history && p.history.length >= 2) {

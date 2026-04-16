@@ -712,7 +712,8 @@ def calculate_dynasty_values(league=None):
                   f"  ({row['rank_diff']:+.0f} spots)  Value: {row['dynasty_value']}")
 
     print(f"\n\nFull rankings saved to {os.path.join(DATA_DIR, 'dynasty_values.csv')}")
-    export_frontend_json(results_df, season_features=season_features)
+    export_frontend_json(results_df, season_features=season_features,
+                         elite_counts=elite_counts, replacement=replacement)
     return results_df
 
 
@@ -824,7 +825,8 @@ def derive_strengths_weaknesses(row):
     return strengths, weaknesses
 
 
-def export_frontend_json(results_df, season_features=None):
+def export_frontend_json(results_df, season_features=None, elite_counts=None,
+                          replacement=None):
     """Export dynasty values to frontend/data.json with enriched player detail data."""
     import json as json_mod
     frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
@@ -898,9 +900,20 @@ def export_frontend_json(results_df, season_features=None):
             rec["team"] = ""
         records.append(rec)
 
+    # Wrap with metadata (elite counts, replacement levels) for contextual tooltips
+    output = {
+        "meta": {
+            "eliteCounts": elite_counts or {},
+            "replacementPpg": {k: round(float(v), 1) for k, v in (replacement or {}).items()},
+            "eliteThreshold": "1.5× replacement PPG",
+            "peakAges": {"QB": 26, "RB": 23, "WR": 24, "TE": 24},
+        },
+        "players": records,
+    }
+
     out_path = os.path.join(frontend_dir, "data.json")
     with open(out_path, "w") as f:
-        json_mod.dump(records, f)
+        json_mod.dump(output, f)
     print(f"Frontend data exported to {out_path} ({len(records)} players)")
 
 
