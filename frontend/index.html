@@ -345,6 +345,23 @@
     border-radius: 2px;
     transition: width 0.2s;
   }
+
+  .trend-cell {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 0.78rem;
+  }
+  .trend-up-strong { color: var(--green); }
+  .trend-up { color: #4ade80; }
+  .trend-neutral { color: var(--text-muted); }
+  .trend-down { color: #fb923c; }
+  .trend-down-strong { color: var(--red); }
+  .trend-cell .arrow {
+    display: inline-block;
+    font-size: 0.7rem;
+    margin-right: 2px;
+    opacity: 0.85;
+  }
 </style>
 </head>
 <body>
@@ -391,7 +408,7 @@
         <th data-key="predPpg" class="num">Proj <span class="sort-arrow">&#9650;</span></th>
         <th data-key="value" class="num">Value <span class="sort-arrow">&#9650;</span></th>
         <th class="num">Range</th>
-        <th data-key="assetMult" class="num">Asset <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="assetMult" class="num" title="Dynasty Trend — how much a player's dynasty value is above or below their pure production value, based on age, upside, and positional scarcity.">Trend <span class="sort-arrow">&#9650;</span></th>
         <th data-key="consistency" class="num">Consist <span class="sort-arrow">&#9650;</span></th>
         <th data-key="marketValue" class="num">Mkt <span class="sort-arrow">&#9650;</span></th>
       </tr>
@@ -484,6 +501,17 @@ function render() {
     const consistWidth = Math.round((1 - p.consistency) * 100);
     const consistHtml = `<span class="consistency-bar"><span class="consistency-fill" style="width:${consistWidth}%;background:${consistencyColor(p.consistency)}"></span></span> <span style="font-size:0.7rem;color:var(--text-muted)">${p.consistency.toFixed(2)}</span>`;
 
+    // Trend: convert asset multiplier to an intuitive +/- percentage
+    const trendPct = Math.round((p.assetMult - 1) * 100);
+    let trendCls, trendArrow;
+    if (trendPct >= 30)      { trendCls = 'trend-up-strong'; trendArrow = '&#9650;&#9650;'; }
+    else if (trendPct >= 10) { trendCls = 'trend-up'; trendArrow = '&#9650;'; }
+    else if (trendPct >= -5) { trendCls = 'trend-neutral'; trendArrow = '—'; }
+    else if (trendPct >= -25){ trendCls = 'trend-down'; trendArrow = '&#9660;'; }
+    else                     { trendCls = 'trend-down-strong'; trendArrow = '&#9660;&#9660;'; }
+    const trendLabel = trendPct > 0 ? `+${trendPct}%` : trendPct < 0 ? `${trendPct}%` : '0%';
+    const trendHtml = `<span class="${trendCls}"><span class="arrow">${trendArrow}</span>${trendLabel}</span>`;
+
     return `<tr>
       <td class="rank-cell">${i + 1}</td>
       <td class="player-name"><a href="player.html?rank=${p.rank}" style="color:var(--text);text-decoration:none;transition:color 0.15s" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text)'">${p.name}</a>${missedHtml}</td>
@@ -494,7 +522,7 @@ function render() {
       <td class="num">${p.predPpg}</td>
       <td class="num value-cell">${p.value.toLocaleString()}</td>
       <td class="num">${rangeHtml}</td>
-      <td class="num">${p.assetMult.toFixed(2)}</td>
+      <td class="num trend-cell">${trendHtml}</td>
       <td class="num">${consistHtml}</td>
       <td class="num mkt-cell">${mktHtml}</td>
     </tr>`;
