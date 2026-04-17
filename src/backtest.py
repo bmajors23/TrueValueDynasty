@@ -156,6 +156,75 @@ def backtest_single_year(season_features, test_season, verbose=True):
 
     test_df["predicted_ppg"] = model.predict(X_test).clip(min=0)
 
+    # --- ANCHORED PREDICTION (mirrors production dynasty_value.py) ---
+    # This is what production actually uses: model blended with career-weighted PPG.
+    # We compute it here so the backtest measures what the app actually serves.
+    history_before_test = season_features[season_features["season"] < test_season]
+
+    def compute_anchor_for_player(pid):
+        """Recency-weighted career PPG (50/30/20) and total games up to test_season."""
+        h = history_before_test[history_before_test["player_id"] == pid].sort_values(
+            "season", ascending=False
+        )
+        if len(h) == 0:
+            return 0.0, 0
+        weights = [0.50, 0.30, 0.20][: min(len(h), 3)]
+        weights = [w / sum(weights) for w in weights]
+        ppg = 0.0
+        games = 0
+        for i in range(len(weights)):
+            ppg += weights[i] * h.iloc[i]["ppg"]
+            games += h.iloc[i]["games"]
+        return float(ppg), int(games)
+
+    def player_consistency(pid):
+        """Consistency multiplier from history — mirror of dynasty_value logic."""
+        h = history_before_test[history_before_test["player_id"] == pid]
+        if len(h) == 0:
+            return 1.0
+        good = (h["ppg"] >= 8).sum()
+        ppg_vals = h["ppg"].values
+        if len(ppg_vals) >= 2 and ppg_vals.mean() > 0:
+            cv = ppg_vals.std() / ppg_vals.mean()
+        else:
+            cv = 0.5
+        track = max(0, 1.0 - (good - 1) * 0.2)
+        variance = min(1.0, cv / 0.5)
+        mult = 0.3 + 0.7 * (0.6 * track + 0.4 * variance)
+        return min(1.0, max(0.3, mult))
+
+    def anchor_blend(model_pred, anchor_ppg, games_played, consistency, horizon=1):
+        """Mirror of production anchor_prediction with elite boost."""
+        if anchor_ppg <= 0 or games_played < 6:
+            return model_pred
+        base_weight = 0.45
+        base_weight += 0.15 * min(1.0, games_played / 30.0)
+        base_weight += max(0, (1.0 - consistency) / 0.7) * 0.10
+        # Elite boost
+        elite_boost = 0
+        max_weight = 0.70
+        if horizon == 1 and games_played >= 20:
+            if anchor_ppg >= 15 and consistency <= 0.65:
+                elite_boost = min(0.25, 0.10 + (anchor_ppg - 15) * 0.03)
+                max_weight = 0.92
+            elif anchor_ppg >= 12 and consistency <= 0.75:
+                elite_boost = 0.10
+                max_weight = 0.80
+        base_weight += elite_boost
+        horizon_decay = {1: 1.0, 2: 0.70, 3: 0.50}
+        decay = horizon_decay.get(horizon, 0.50)
+        anchor_weight = min(base_weight * decay, max_weight)
+        return model_pred * (1 - anchor_weight) + anchor_ppg * anchor_weight
+
+    anchored_preds = []
+    for _, row in test_df.iterrows():
+        anchor_ppg, anchor_games = compute_anchor_for_player(row["player_id"])
+        cons = player_consistency(row["player_id"])
+        anchored_preds.append(anchor_blend(
+            row["predicted_ppg"], anchor_ppg, anchor_games, cons, horizon=1
+        ))
+    test_df["anchored_prediction"] = anchored_preds
+
     # Naive baseline: last season's PPG (the simplest possible prediction)
     test_df["naive_prediction"] = test_df["ppg"]
 
@@ -245,7 +314,8 @@ def run_backtest(test_seasons=None, by_position=False):
         naive_metrics = evaluate_predictions(results_eval, "Model")
         # Print manually for baselines
         actual = results["actual_ppg"]
-        for baseline_name, baseline_col in [("Naive (last PPG)", "naive_prediction"),
+        for baseline_name, baseline_col in [("Anchored (prod)", "anchored_prediction"),
+                                              ("Naive (last PPG)", "naive_prediction"),
                                               ("Pos Mean", "pos_mean_prediction"),
                                               ("Blended (70/30)", "blended_naive")]:
             pred = results[baseline_col]
@@ -298,6 +368,7 @@ def run_backtest(test_seasons=None, by_position=False):
 
     actual = combined["actual_ppg"]
     for name, col in [("XGBoost Model", "predicted_ppg"),
+                       ("Anchored (prod)", "anchored_prediction"),
                        ("Naive (last PPG)", "naive_prediction"),
                        ("Position Mean", "pos_mean_prediction"),
                        ("Blended (70/30)", "blended_naive")]:
@@ -315,11 +386,17 @@ def run_backtest(test_seasons=None, by_position=False):
     print(f"\n  Model vs Naive:    {(1 - model_mae/naive_mae)*100:+.1f}% MAE improvement")
     print(f"  Model vs Blended:  {(1 - model_mae/blended_mae)*100:+.1f}% MAE improvement")
 
+    # Model vs Anchored comparison
+    anchored_mae = mean_absolute_error(actual, combined["anchored_prediction"])
+    print(f"  Anchored vs Naive: {(1 - anchored_mae/naive_mae)*100:+.1f}% MAE improvement")
+    print(f"  Anchored vs Model: {(1 - anchored_mae/model_mae)*100:+.1f}% MAE improvement")
+
     # Elite player analysis: how well does the model predict top performers?
     print(f"\n  ELITE PLAYER ANALYSIS (PPG >= 15 in test season):")
     elite = combined[combined["actual_ppg"] >= 15]
     if len(elite) > 0:
         for name, col in [("XGBoost Model", "predicted_ppg"),
+                           ("Anchored (prod)", "anchored_prediction"),
                            ("Naive (last PPG)", "naive_prediction"),
                            ("Blended (70/30)", "blended_naive")]:
             mae = mean_absolute_error(elite["actual_ppg"], elite[col])

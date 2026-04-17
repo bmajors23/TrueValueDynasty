@@ -258,6 +258,8 @@ def anchor_prediction(model_pred, anchor_ppg, games_played, consistency,
     - Consistency: lower variance = more trustworthy anchor
     - Staleness: missed seasons reduce trust in the anchor
     - Horizon: further-out predictions rely more on the model
+    - Elite status: elite + consistent producers get supercharged anchor
+      (backtest shows model MAE > naive MAE for this group)
 
     Returns blended PPG prediction.
     """
@@ -276,6 +278,25 @@ def anchor_prediction(model_pred, anchor_ppg, games_played, consistency,
     consistency_bonus = max(0, (1.0 - consistency) / 0.7) * 0.10
     base_weight += consistency_bonus
 
+    # --- ELITE BOOST (NEW) ---
+    # XGBoost systematically under-predicts elite players due to mean regression.
+    # For high-PPG, consistent, well-established producers, their career PPG
+    # is a MUCH better forecaster than the model. Boost anchor weight up to ~0.90.
+    # Only applies at horizon 1 where the boost has clearest signal.
+    elite_boost = 0
+    max_weight = 0.70
+    if horizon == 1 and games_played >= 20:
+        # Elite tier: 15+ PPG career-weighted, consistent (≤0.65)
+        if anchor_ppg >= 15 and consistency <= 0.65:
+            # Scales with PPG: 15 PPG → +0.10, 20+ PPG → +0.25
+            elite_boost = min(0.25, 0.10 + (anchor_ppg - 15) * 0.03)
+            max_weight = 0.92
+        # Strong tier: 12-15 PPG with reasonable consistency
+        elif anchor_ppg >= 12 and consistency <= 0.75:
+            elite_boost = 0.10
+            max_weight = 0.80
+    base_weight += elite_boost
+
     # Staleness penalty: each missed season halves the anchor weight
     if seasons_missed > 0:
         base_weight *= 0.5 ** seasons_missed
@@ -286,7 +307,7 @@ def anchor_prediction(model_pred, anchor_ppg, games_played, consistency,
     decay = horizon_decay.get(horizon, 0.50)
 
     anchor_weight = base_weight * decay
-    anchor_weight = min(anchor_weight, 0.70)  # never more than 70% anchor
+    anchor_weight = min(anchor_weight, max_weight)
 
     return model_pred * (1 - anchor_weight) + anchor_ppg * anchor_weight
 
