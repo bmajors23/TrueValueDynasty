@@ -387,20 +387,23 @@ def load_rookie_predictions(current_df, name_map):
     for name_norm, pred in zip(rf["name_norm"], preds):
         rookie_pred_by_name[name_norm] = float(pred)
 
-    def rookie_weight_fn(years_in_league):
-        """Bayesian prior decay: rookie contribution shrinks as NFL sample grows.
-        Using ~15 games/year proxy through exponential decay constant 25.
-          yrs=0 → 1.00 (pure rookie)
-          yrs=1 → 0.55
-          yrs=2 → 0.30
-          yrs=3 → 0.17
-          yrs=4 → 0.09
-          yrs=5+→ ~0
+    def rookie_weight_fn(career_games):
+        """Rookie model is a COLD-START tool — it estimates Y1 PPG from
+        pre-NFL features. Once actual NFL data exists, it's strictly
+        worse than the main model (which sees real stats).
+
+        Decay by actual NFL games played:
+          0 games (pre-NFL rookie):     1.00 — rookie model is the only signal
+          4 games (early rookie year):  0.75 — tiny sample, still blend
+          8 games (mid rookie year):    0.50
+          12 games (late rookie year):  0.25
+          16+ games (full Y1+ sample):  0.00 — trust the actual data
         """
-        if years_in_league is None or pd.isna(years_in_league):
-            return 0
-        games_proxy = float(years_in_league) * 15.0
-        return float(np.exp(-games_proxy / 25.0))
+        if career_games is None or pd.isna(career_games) or career_games <= 0:
+            return 1.0
+        if career_games >= 16:
+            return 0.0
+        return float(max(0.0, 1.0 - career_games / 16.0))
 
     print(f"  Rookie model loaded: {len(rookie_pred_by_name)} player predictions available")
     return rookie_pred_by_name, rookie_weight_fn
@@ -548,14 +551,16 @@ def calculate_dynasty_values(league=None):
         anchor_games = anchor["games"]
 
         # --- Rookie model blend ---
-        # If this player has a rookie-model prediction available, blend it
-        # with the main model's 1-year prediction using a career-games
-        # decay weight. Rookies get near 100% rookie model; vets get 0%.
+        # Rookie model is a cold-start tool. It only contributes weight when
+        # the player has <16 NFL career games — once a full rookie season
+        # is in the books, the main model (which sees real production) is
+        # strictly better. Decay variable is TOTAL career NFL games played.
         rookie_blend_pred = None
         rookie_blend_weight = 0.0
         if rookie_weight_fn is not None:
-            years_in_league = player.get("years_in_league", 99)
-            rw = rookie_weight_fn(years_in_league)
+            # career_games comes from anchor (aggregated historical games)
+            career_games_total = anchor.get("games", 0) if isinstance(anchor, dict) else 0
+            rw = rookie_weight_fn(career_games_total)
             if rw >= 0.05:  # below 5% weight, not worth looking up
                 name = pid_name_map.get(player["player_id"])
                 if name:
