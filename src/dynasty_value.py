@@ -322,6 +322,90 @@ def load_horizon_model(filename):
     return model
 
 
+def _normalize_name_simple(text):
+    """Match the normalization used in build_rookie_features linkage."""
+    import re as _re
+    import unicodedata
+    if text is None:
+        return ""
+    s = str(text).lower().strip()
+    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+    s = _re.sub(r"\s+(jr|sr|ii|iii|iv|v)\.?\s*$", "", s)
+    s = _re.sub(r"[.'\-,]", " ", s)
+    s = _re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def load_rookie_predictions(current_df, name_map):
+    """Score every player in rookie_features.csv with the rookie model,
+    then return a dict keyed by normalized name → Year-1 PPG prediction.
+
+    Returns ({name_norm: predicted_ppg}, rookie_weight_fn) where
+    rookie_weight_fn(years_in_league) → blend weight for this player.
+
+    Returns ({}, None) if rookie model isn't available.
+    """
+    rookie_model_path = os.path.join(MODEL_DIR, "rookie_model_final.json")
+    rookie_features_path = os.path.join(DATA_DIR, "college", "rookie_features.csv")
+    rookie_cols_path = os.path.join(MODEL_DIR, "rookie_model_features.txt")
+
+    if not (os.path.exists(rookie_model_path) and os.path.exists(rookie_features_path)
+            and os.path.exists(rookie_cols_path)):
+        return {}, None
+
+    rookie_model = xgb.XGBRegressor()
+    rookie_model.load_model(rookie_model_path)
+    feature_cols = [c.strip() for c in open(rookie_cols_path).read().splitlines() if c.strip()]
+    rf = pd.read_csv(rookie_features_path)
+
+    # Build X matrix matching training feature order
+    df = rf.copy()
+    if "nfl_pos" in df.columns:
+        dummies = pd.get_dummies(df["nfl_pos"], prefix="pos").astype(int)
+        df = pd.concat([df, dummies], axis=1)
+
+    # Align columns — fill missing with NaN (XGBoost handles natively)
+    for c in feature_cols:
+        if c not in df.columns:
+            df[c] = np.nan
+    # Drop non-numeric (same as training)
+    X = df[feature_cols].copy()
+    non_numeric = X.select_dtypes(include=["object"]).columns.tolist()
+    if non_numeric:
+        X = X.drop(columns=non_numeric)
+        # Re-add as NaN
+        for c in non_numeric:
+            X[c] = np.nan
+        X = X[feature_cols]
+
+    preds = rookie_model.predict(X).clip(min=0)
+
+    # Map normalized player name → prediction
+    # Prefer the most recent prediction if duplicates exist
+    rf["name_norm"] = rf["nfl_player_name"].apply(_normalize_name_simple)
+    rookie_pred_by_name = {}
+    for name_norm, pred in zip(rf["name_norm"], preds):
+        rookie_pred_by_name[name_norm] = float(pred)
+
+    def rookie_weight_fn(years_in_league):
+        """Bayesian prior decay: rookie contribution shrinks as NFL sample grows.
+        Using ~15 games/year proxy through exponential decay constant 25.
+          yrs=0 → 1.00 (pure rookie)
+          yrs=1 → 0.55
+          yrs=2 → 0.30
+          yrs=3 → 0.17
+          yrs=4 → 0.09
+          yrs=5+→ ~0
+        """
+        if years_in_league is None or pd.isna(years_in_league):
+            return 0
+        games_proxy = float(years_in_league) * 15.0
+        return float(np.exp(-games_proxy / 25.0))
+
+    print(f"  Rookie model loaded: {len(rookie_pred_by_name)} player predictions available")
+    return rookie_pred_by_name, rookie_weight_fn
+
+
 def calculate_dynasty_values(league=None):
     """Calculate dynasty true value for all current players."""
     if league is None:
@@ -365,6 +449,12 @@ def calculate_dynasty_values(league=None):
     # Load data
     current_df = pd.read_csv(os.path.join(DATA_DIR, "current_features.csv"))
     season_features = pd.read_csv(os.path.join(DATA_DIR, "season_features.csv"))
+    players_df = pd.read_csv(os.path.join(DATA_DIR, "players.csv"))
+    pid_name_map = players_df.set_index("gsis_id")["display_name"].to_dict()
+
+    # Load rookie model — returns (name_norm → PPG, rookie_weight_fn)
+    print("Loading rookie model (college + combine + draft + recruit)...")
+    rookie_preds, rookie_weight_fn = load_rookie_predictions(current_df, pid_name_map)
 
     # Replacement levels
     replacement = compute_replacement_levels(season_features, league)
@@ -457,6 +547,31 @@ def calculate_dynasty_values(league=None):
         anchor_ppg = anchor["ppg"]
         anchor_games = anchor["games"]
 
+        # --- Rookie model blend ---
+        # If this player has a rookie-model prediction available, blend it
+        # with the main model's 1-year prediction using a career-games
+        # decay weight. Rookies get near 100% rookie model; vets get 0%.
+        rookie_blend_pred = None
+        rookie_blend_weight = 0.0
+        if rookie_weight_fn is not None:
+            years_in_league = player.get("years_in_league", 99)
+            rw = rookie_weight_fn(years_in_league)
+            if rw >= 0.05:  # below 5% weight, not worth looking up
+                name = pid_name_map.get(player["player_id"])
+                if name:
+                    nn = _normalize_name_simple(name)
+                    rp = rookie_preds.get(nn)
+                    if rp is not None:
+                        rookie_blend_pred = rp
+                        rookie_blend_weight = rw
+
+        def _blend_rookie(main_pred):
+            """Blend rookie model prediction with main-model prediction."""
+            if rookie_blend_pred is None:
+                return main_pred
+            return (rookie_blend_weight * rookie_blend_pred
+                    + (1 - rookie_blend_weight) * main_pred)
+
         # Capture year-by-year projection data for player detail pages
         yearly_projections = []
 
@@ -470,7 +585,7 @@ def calculate_dynasty_values(league=None):
                 player.get("draft_capital_decayed", 0) * (0.8 ** year)
             )
             # Use anchored year-1 PPG prediction as the survival model's PPG input
-            yr1_ppg_raw = predictions[1]["mean"][idx]
+            yr1_ppg_raw = _blend_rookie(predictions[1]["mean"][idx])
             yr1_ppg = anchor_prediction(
                 yr1_ppg_raw, anchor_ppg, anchor_games, player_reg,
                 seasons_missed, horizon=1,
@@ -495,8 +610,9 @@ def calculate_dynasty_values(league=None):
             cumulative_survival *= p_survive
 
             # --- PPG prediction (conditional on still playing) ---
-            # Anchor model predictions to actual recent PPG
-            ppg_mean_raw = predictions[horizon]["mean"][idx]
+            # Anchor model predictions to actual recent PPG.
+            # For rookies/early-career, blend with rookie model first.
+            ppg_mean_raw = _blend_rookie(predictions[horizon]["mean"][idx])
             ppg_q10_raw = predictions[horizon]["q10"][idx] if predictions[horizon]["q10"] is not None else ppg_mean_raw * 0.6
             ppg_q90_raw = predictions[horizon]["q90"][idx] if predictions[horizon]["q90"] is not None else ppg_mean_raw * 1.4
 
@@ -551,7 +667,8 @@ def calculate_dynasty_values(league=None):
             total_value_high *= staleness_penalty
 
         # Asset multiplier: converts production value → dynasty value
-        ppg_mean_1yr = float(predictions[1]["mean"][idx])
+        # Also blend rookie model here for consistency
+        ppg_mean_1yr = _blend_rookie(float(predictions[1]["mean"][idx]))
         ppg_q90_1yr = float(predictions[1]["q90"][idx]) if predictions[1]["q90"] is not None else ppg_mean_1yr * 1.3
         # Anchor the 1yr prediction for the asset multiplier too
         ppg_mean_1yr_anchored = anchor_prediction(
