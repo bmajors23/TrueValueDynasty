@@ -303,10 +303,28 @@ def check_match_coverage():
             print(f"    {row['player_name']} ({row['pos']}, {row['school']})")
 
 
+def pull_recruits_year(year):
+    """Pull HS recruit class for a given year and save to recruits/YYYY.parquet."""
+    df = pull_recruits(year)
+    if df.empty:
+        print(f"  {year}: no recruit data")
+        return 0
+    recruits_dir = COLLEGE_DIR / "recruits"
+    recruits_dir.mkdir(parents=True, exist_ok=True)
+    out = recruits_dir / f"{year}.parquet"
+    df.to_parquet(out, index=False)
+    # Count by stars for sanity
+    by_stars = df["stars"].value_counts().sort_index(ascending=False).to_dict()
+    stars_str = " · ".join(f"{int(s)}★={c}" for s, c in by_stars.items() if pd.notna(s))
+    print(f"  {year}: {len(df)} recruits ({stars_str})")
+    return len(df)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--year", type=int, help="Pull a single year")
-    ap.add_argument("--years", help="Range 'YYYY-YYYY' to pull")
+    ap.add_argument("--year", type=int, help="Pull a single year of stats/usage/PPA")
+    ap.add_argument("--years", help="Range 'YYYY-YYYY' to pull stats/usage/PPA")
+    ap.add_argument("--recruits", help="Pull HS recruit classes, range 'YYYY-YYYY'")
     ap.add_argument("--match-coverage", action="store_true",
                     help="Report % of our rookies linkable to CFBD")
     args = ap.parse_args()
@@ -315,13 +333,25 @@ def main():
         check_match_coverage()
         return
 
+    if args.recruits:
+        start, end = [int(x) for x in args.recruits.split("-")]
+        print(f"Pulling HS recruit classes {start}-{end}")
+        print("=" * 60)
+        total = 0
+        for y in range(start, end + 1):
+            total += pull_recruits_year(y)
+            time.sleep(1)
+        print("=" * 60)
+        print(f"Done — {total:,} recruits across {end - start + 1} classes")
+        return
+
     if args.year:
         years = [args.year]
     elif args.years:
         start, end = args.years.split("-")
         years = list(range(int(start), int(end) + 1))
     else:
-        print("Pass --year YYYY or --years YYYY-YYYY")
+        print("Pass --year YYYY, --years YYYY-YYYY, or --recruits YYYY-YYYY")
         sys.exit(1)
 
     for y in years:
