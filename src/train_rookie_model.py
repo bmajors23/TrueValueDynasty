@@ -57,6 +57,7 @@ EXCLUDE_COLS = [
     "nfl_player_name",          # ID
     "name_norm",                # ID helper
     "recruit_committed_school", # high-cardinality string
+    "landing_team",             # string (we'll use the landing_* numeric features)
     "nfl_draft_year",           # used only for splitting
     "first_college_season",     # absolute year leakage
     "last_college_season",      # absolute year leakage
@@ -104,10 +105,27 @@ def main():
                     help="Retrain on all data (2012-2024) for production")
     ap.add_argument("--min-games", type=int, default=4,
                     help="Filter training rows to players with >= N Year-1 games")
+    ap.add_argument("--with-landing", action="store_true",
+                    help="Include landing-spot features (post-draft model). "
+                         "Requires build_landing_features.py to have been run.")
     args = ap.parse_args()
 
     print("Loading training pairs...")
     df = pd.read_csv(COLLEGE_DIR / "rookie_training_pairs.csv")
+
+    # If using landing features, merge them in by player
+    if args.with_landing:
+        landing_path = COLLEGE_DIR / "rookie_features_with_landing.csv"
+        if not landing_path.exists():
+            raise FileNotFoundError(
+                f"{landing_path} not found. Run build_landing_features.py first."
+            )
+        landing = pd.read_csv(landing_path)
+        # Pick out just the landing_ columns + the join key
+        landing_cols = [c for c in landing.columns if c.startswith("landing_")]
+        landing_slim = landing[["nfl_player_name", "nfl_draft_year"] + landing_cols]
+        df = df.merge(landing_slim, on=["nfl_player_name", "nfl_draft_year"], how="left")
+        print(f"  Merged {len(landing_cols)} landing features")
 
     # Filter to usable training examples
     df = df[df["year1_games"] >= args.min_games].copy()
@@ -231,16 +249,18 @@ def main():
         bar = "█" * int(row["gain"] * 300)
         print(f"  {row['feature']:32} {row['gain']:.4f}  {bar}")
 
-    # Save artifacts
-    model_file = "rookie_model_final.json" if args.final else "rookie_model.json"
+    # Save artifacts (name differs for pre/post-draft variants)
+    suffix = "_postdraft" if args.with_landing else ""
+    model_file = f"rookie_model_final{suffix}.json" if args.final else f"rookie_model{suffix}.json"
+    feat_file = f"rookie_model_features{suffix}.txt"
+    imp_file = f"rookie_feature_importance{suffix}.csv"
     model.save_model(MODEL_DIR / model_file)
-    importance.to_csv(DATA_DIR / "rookie_feature_importance.csv", index=False)
-    # Save feature column order so we can load + predict consistently
-    (MODEL_DIR / "rookie_model_features.txt").write_text("\n".join(feat_cols))
+    importance.to_csv(DATA_DIR / imp_file, index=False)
+    (MODEL_DIR / feat_file).write_text("\n".join(feat_cols))
 
     print(f"\n✅ Saved: {MODEL_DIR / model_file}")
-    print(f"   Feature list: {MODEL_DIR / 'rookie_model_features.txt'}")
-    print(f"   Importance:   {DATA_DIR / 'rookie_feature_importance.csv'}")
+    print(f"   Feature list: {MODEL_DIR / feat_file}")
+    print(f"   Importance:   {DATA_DIR / imp_file}")
 
 
 if __name__ == "__main__":

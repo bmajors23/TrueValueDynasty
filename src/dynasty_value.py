@@ -345,12 +345,29 @@ def load_rookie_predictions(current_df, name_map):
 
     Returns ({}, None) if rookie model isn't available.
     """
-    rookie_model_path = os.path.join(MODEL_DIR, "rookie_model_final.json")
-    rookie_features_path = os.path.join(DATA_DIR, "college", "rookie_features.csv")
-    rookie_cols_path = os.path.join(MODEL_DIR, "rookie_model_features.txt")
+    # Prefer the post-draft model (with landing features) if it exists.
+    # Fall back to the pre-draft model otherwise.
+    post_model = os.path.join(MODEL_DIR, "rookie_model_final_postdraft.json")
+    post_features = os.path.join(DATA_DIR, "college", "rookie_features_with_landing.csv")
+    post_cols = os.path.join(MODEL_DIR, "rookie_model_features_postdraft.txt")
 
-    if not (os.path.exists(rookie_model_path) and os.path.exists(rookie_features_path)
-            and os.path.exists(rookie_cols_path)):
+    pre_model = os.path.join(MODEL_DIR, "rookie_model_final.json")
+    pre_features = os.path.join(DATA_DIR, "college", "rookie_features.csv")
+    pre_cols = os.path.join(MODEL_DIR, "rookie_model_features.txt")
+
+    if (os.path.exists(post_model) and os.path.exists(post_features)
+            and os.path.exists(post_cols)):
+        rookie_model_path = post_model
+        rookie_features_path = post_features
+        rookie_cols_path = post_cols
+        variant = "post-draft (with landing features)"
+    elif (os.path.exists(pre_model) and os.path.exists(pre_features)
+            and os.path.exists(pre_cols)):
+        rookie_model_path = pre_model
+        rookie_features_path = pre_features
+        rookie_cols_path = pre_cols
+        variant = "pre-draft (college/combine/draft only)"
+    else:
         return {}, None
 
     rookie_model = xgb.XGBRegressor()
@@ -405,7 +422,8 @@ def load_rookie_predictions(current_df, name_map):
             return 0.0
         return float(max(0.0, 1.0 - career_games / 16.0))
 
-    print(f"  Rookie model loaded: {len(rookie_pred_by_name)} player predictions available")
+    print(f"  Rookie model loaded: {variant}")
+    print(f"  → {len(rookie_pred_by_name)} player predictions available")
     return rookie_pred_by_name, rookie_weight_fn
 
 
